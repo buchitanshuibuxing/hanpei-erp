@@ -1,0 +1,68 @@
+:root {
+  --erp-blue: #1f4e79;
+  --erp-blue-soft: #eaf1f8;
+  --erp-border: #e4e9ef;
+  --erp-text: #26323d;
+  --erp-muted: #7a8794;
+}
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+  color: var(--erp-text);
+  background: #f5f7fa;
+  font-size: 13px;
+}
+.topbar {
+  height: 56px; background: var(--erp-blue); color: #fff;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 18px; box-shadow: 0 1px 4px rgba(0,0,0,.12);
+}
+.topbar .brand { font-size: 17px; font-weight: 500; letter-spacing: .5px; }
+.topbar .brand small { font-size: 11px; opacity: .75; margin-left: 10px; font-weight: 400; }
+.topbar-right { display: flex; align-items: center; gap: 14px; }
+.sidebar { width: 208px; background: #fff; border-right: 1px solid var(--erp-border); overflow-y: auto; }
+.sidebar .group-title {
+  padding: 14px 16px 6px; color: var(--erp-muted); font-size: 11px; letter-spacing: 1px;
+}
+.sidebar .menu-item {
+  display: block; padding: 9px 16px 9px 22px; color: #455561; cursor: pointer;
+  text-decoration: none; font-size: 13px; border-left: 3px solid transparent;
+}
+.sidebar .menu-item:hover { background: #f3f7fb; }
+.sidebar .menu-item.active { background: var(--erp-blue-soft); color: var(--erp-blue); border-left-color: var(--erp-blue); font-weight: 500; }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.content { flex: 1; padding: 14px 16px; overflow: auto; }
+.page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.page-title { font-size: 16px; font-weight: 500; margin: 0; }
+.page-sub { color: var(--erp-muted); font-size: 12px; margin-top: 3px; }
+.card { background: #fff; border: 1px solid var(--erp-border); border-radius: 8px; padding: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+/* 附录 D.2：列表固定高度内滚，杜绝页面无限往下 */
+.table-scroll { max-height: 420px; overflow: auto; border: 1px solid var(--erp-border); border-radius: 6px; }
+.table-scroll.sm { max-height: 300px; }
+.table-scroll .el-table__header-wrapper { position: sticky; top: 0; z-index: 2; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.kpi { background: #fff; border: 1px solid var(--erp-border); border-radius: 8px; padding: 14px 16px; }
+.kpi .label { color: var(--erp-muted); font-size: 12px; }
+.kpi .value { font-size: 24px; font-weight: 500; margin-top: 6px; color: var(--erp-blue); }
+.kpi .hint { font-size: 11px; color: var(--erp-muted); margin-top: 4px; }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.pager .info { color: var(--erp-muted); font-size: 12px; margin-right: auto; }
+.hidden { display: none; }
+.login-wrap {
+  height: 100%; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #eef4fa, #dce9f5);
+}
+.login-card { width: 380px; background: #fff; border-radius: 12px; padding: 32px; box-shadow: 0 8px 30px rgba(31,78,121,.14); }
+.login-card h1 { font-size: 20px; margin: 0 0 6px; color: var(--erp-blue); }
+.login-card p { color: var(--erp-muted); margin: 0 0 22px; font-size: 12px; }
+.muted { color: var(--erp-muted); }
+.mono { font-family: Consolas, monospace; }
+@media (max-width: 800px) {
+  .sidebar { width: 56px; }
+  .sidebar .group-title, .sidebar .menu-item span { display: none; }
+  .sidebar .menu-item { padding: 12px; text-align: center; font-size: 11px; }
+  .content { padding: 10px; }
+  .topbar-right .hide-mobile { display: none; }
+}
