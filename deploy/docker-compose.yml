@@ -20,8 +20,12 @@ services:
     volumes:
       - redisdata:/data
 
+  # 对象存储占位：业务代码未使用（附件落 data/uploads/），默认不启动。
+  # 国内镜像加速源对 minio/* 返回 denied，按需启用时请自行配置可达 registry：
+  #   docker compose --profile storage up -d
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    profiles: ["storage"]
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:

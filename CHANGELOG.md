@@ -2,6 +2,18 @@
 
 本项目从零落地后的版本记录。业务设计口径见《ERP系统规划方案.md》附录 E，数据口径见《核心数据结构设计.md》第 14 节。
 
+## v1.0.4（2026-11-23）—— GitHub 托管、一键部署与真实 Linux 实测
+
+- **代码托管**：创建公开仓库 `github.com/buchitanshuibuxing/hanpei-erp`，推送 `main` 与 `v1.0.0` ~ `v1.0.3` 全部 tag，保留完整提交历史。
+- **一键部署脚本**：新增 `deploy/onekey.sh`，双模式：`lite`（默认，系统 Python 3.12 + SQLite + 前端构建 + systemd，端口 8008）与 `--docker`（Docker Compose 起 PG / Redis / 后端 / Nginx，端口 80；MinIO 改为可选 profile）。8 步幂等流程、随机密钥、健康检查覆盖 health / SPA / 管理员登录；apt / pip / npm / Docker 全走国内镜像；`git clone` 被 TLS 干扰时自动回落 GitHub codeload tarball。
+- **真实 Linux 部署实测抓到并修复 3 个本地与 CI 都漏掉的缺陷**：
+  1. `backend/constraints.txt` 的 `psycopg[binary]==3.3.9` 违反 pip 新 resolver「constraints 不得带 extras」，`pip install -c` 直接报错；改为纯包名并补锁 `psycopg-binary` / `pydantic-core`，加静态防护断言。
+  2. `.env` 的 SQLite 相对路径在 systemd `WorkingDirectory=backend/` 下解析到不存在的目录，启动报 `unable to open database file`；改为绝对路径并让旧 `.env` 自动迁移。
+  3. `backend/seed.py` 硬编码 `admin123`，未读 `.env` 的 `BOOTSTRAP_PASSWORD`，一键脚本打印的随机密码是假的、登录必然 401；改为读取 `BOOTSTRAP_ADMIN / BOOTSTRAP_PASSWORD / BOOTSTRAP_PORTAL_USER / BOOTSTRAP_PORTAL_PASSWORD`（不设时保留开发默认值），加防护断言。
+- **顺带修 `deploy/install.sh`**：compose 从 `deploy/` 目录读不到仓库根 `.env`，`${PG_PASSWORD:?}` 会直接拒绝启动；补软链，初始管理员/门户密码改随机并打印。
+- **MinIO 改为可选**：实测国内加速源对 `minio/*` 一律返回 denied，而后端代码无任何 S3 / MinIO 依赖（附件落 `data/uploads/`）；`docker-compose.yml` 固定版本标签并加 `profiles: ["storage"]`，默认不启动，不再阻断整套部署。
+- `SECURITY.md` 补充：种子账号仅首次初始化生效、随机凭据来源、`.env` 权限 600。
+
 ## v1.0.3（2026-11-23）—— 工程稳健性加固
 
 对标 GitHub 同类开源 ERP（Carbon / ERPNext / AureusERP / IDURAR）后的工程层补齐，**未改动业务逻辑**：

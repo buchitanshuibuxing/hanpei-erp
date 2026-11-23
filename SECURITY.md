@@ -10,7 +10,8 @@
 
 - `SECRET_KEY`：`.env.example` 里 `CHANGE_ME_TO_A_LONG_RANDOM_STRING` 是**占位符**，`get_secret()` 检测到该值会自动改用 `data/secret.key` 中的随机密钥；上生产必须替换为强随机值并纳入密钥管理。
 - `MASTER_KEY`：settings 中 9 类敏感键（邮箱密码、API Key、Webhook 等）用 Fernet 加密，列表接口回显 `******`，审计日志不落明文。
-- `data/`（数据库、密钥、上传、备份）已在 `.gitignore` 中排除；`deploy/install.sh` 会生成权限 600 的 `.env`。
+- `data/`（数据库、密钥、上传、备份）已在 `.gitignore` 中排除；`deploy/onekey.sh` 与 `deploy/install.sh` 会生成权限 600 的 `.env`。
+- `BOOTSTRAP_ADMIN / BOOTSTRAP_PASSWORD / BOOTSTRAP_PORTAL_USER / BOOTSTRAP_PORTAL_PASSWORD`：初始账号凭据，由 `backend/seed.py` 读取，**仅首次初始化（用户表为空）生效**。一键脚本会写入强随机值并在部署结束时打印；已有数据库请通过系统内「修改密码」功能改密，改 `.env` 不会重置旧库。
 
 ## 已实现的防护
 
@@ -27,7 +28,7 @@
 | 传输加密 | 容器内 HTTP，由 Nginx 终结 TLS | 生产必须配 80/443 证书，禁止明文对外 |
 | 上传文件 | 落 `data/uploads/`，按扩展名保存 | 公网开放前补 MIME/大小校验与病毒扫描 |
 | 数据库 | 开发 SQLite 实测；生产 PostgreSQL 16 | 上线前在 PG 跑迁移 + 全量回归（规划附录 E.7） |
-| 默认账号 | `admin/admin123`、门户 `alnoor/portal123` | **上生产第一件事就是改掉** |
+| 默认账号 | 开发默认 `admin/admin123`、门户 `alnoor/portal123`；一键部署改为 `.env` 随机密码 | 手工部署时**第一件事就是改掉**，并确认 `.env` 权限为 600 |
 
 ## 报告安全问题
 

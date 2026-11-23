@@ -15,7 +15,7 @@
 | 前端 | Vue 3 / Element Plus / Vite / Pinia / Vue Router / ECharts / Axios（Hash 路由） |
 | 数据库 | 开发 SQLite（零配置，`data/erp.db`）；生产 PostgreSQL 16，`DATABASE_URL` 切换 |
 | 单据 | ReportLab（QT/PI/PL PDF）、openpyxl（Excel 导入导出） |
-| 部署 | **单端口**：后端直接托管 `frontend/dist`；生产 Docker Compose（PostgreSQL + Redis + MinIO + 后端 + Nginx） |
+| 部署 | **单端口**：后端直接托管 `frontend/dist`；生产 Docker Compose（PostgreSQL + Redis + 后端 + Nginx（MinIO 可选）） |
 | 移动端 | PWA（manifest + Service Worker），可「添加到主屏幕」，替代规划中的桌面客户端 |
 
 ## 快速开始（本地，Windows / Linux 通用）
@@ -145,7 +145,7 @@ python ../scripts/run_all.py                # CI 与人工共用同一入口
 ```bash
 curl -fsSL --retry 3 --max-time 60 https://raw.githubusercontent.com/buchitanshuibuxing/hanpei-erp/main/deploy/onekey.sh -o onekey.sh
 sudo bash onekey.sh            # lite：Python 3.12 + SQLite + 前端构建 + systemd，端口 8008
-sudo bash onekey.sh --docker   # full：Docker Compose PG/Redis/MinIO/后端/Nginx，端口 80
+sudo bash onekey.sh --docker   # full：Docker Compose PG/Redis/后端/Nginx，端口 80
 sudo bash onekey.sh --help
 ```
 
@@ -153,6 +153,7 @@ sudo bash onekey.sh --help
 
 - **幂等**：重复执行不覆盖 `.env`、数据库与数据卷；已有仓库走 `fetch + reset`，tarball 模式会提示重新执行。
 - **国内网络友好**：apt / pip / npm / Docker 全部走清华、npmmirror、daocloud 镜像；Ubuntu 22.04 自带 Python 3.10 时用 `uv` 装独立 3.12；`git clone` 被 TLS 干扰时自动回落 GitHub codeload tarball。
+- **MinIO 为可选**：业务代码未使用对象存储（附件落 `data/uploads/`），且国内加速源对 `minio/*` 返回 denied，故默认不启动；确需启用用 `docker compose --profile storage up -d` 并自行配置可达 registry。
 - **可覆盖**：`REPO_URL BRANCH INSTALL_DIR APP_PORT HTTP_PORT PYTHON_VERSION NODE_VERSION CN_MIRROR SKIP_FRONTEND`。
 - 完成后打印随机生成的管理员密码、访问地址、日志与备份位置。lite 模式服务为 `systemctl {status|restart|stop} hanpei-erp`；docker 模式在 `deploy/` 下用 `docker compose ps/logs/down`。
 
@@ -162,7 +163,7 @@ sudo bash onekey.sh --help
 cd deploy && sudo bash install.sh
 ```
 
-脚本：检测 Docker → 生成随机 `.env`（权限 600）→ 构建镜像（多阶段构建前端 dist）→ 启动 PostgreSQL + Redis + MinIO + 后端 + Nginx → 健康检查 → 输出访问地址。
+脚本：检测 Docker → 生成随机 `.env`（权限 600）→ 构建镜像（多阶段构建前端 dist）→ 启动 PostgreSQL + Redis + 后端 + Nginx（MinIO 可选） → 健康检查 → 输出访问地址。
 容器启动时先执行 `alembic upgrade head` 再拉起 uvicorn。
 备份 `bash backup.sh`（`pg_dump` + 上传目录 tar，保留 30 天，可挂 cron）；升级 `bash upgrade.sh`（备份 → 重建 → 健康检查 → 失败回滚）。
 人工三件事：域名解析、端口映射、防火墙放行 80/443。
