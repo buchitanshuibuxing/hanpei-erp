@@ -30,6 +30,10 @@ def main():
     bad_extras = [line.strip() for line in con.splitlines()
                   if "==" in line and not line.lstrip().startswith("#") and "[" in line]
     assert not bad_extras, f"constraints.txt 不得包含 extras：{bad_extras}"
+    # seed.py 必须真正读取 BOOTSTRAP_PASSWORD，否则一键部署打印的随机密码不生效
+    seed_src = (ROOT / "backend" / "seed.py").read_text(encoding="utf-8")
+    assert "BOOTSTRAP_PASSWORD" in seed_src and "os.getenv" in seed_src, \
+        "seed.py 未读取 BOOTSTRAP_PASSWORD，随机初始密码会失效"
     assert (ROOT / ".github" / "workflows" / "ci.yml").exists(), "缺少 CI 配置"
     assert (ROOT / "SECURITY.md").exists(), "缺少安全说明"
 

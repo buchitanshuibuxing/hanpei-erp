@@ -159,6 +159,8 @@ SECRET_KEY=$(rand 32)
 MASTER_KEY=
 BOOTSTRAP_ADMIN=admin
 BOOTSTRAP_PASSWORD=$(rand 8)
+BOOTSTRAP_PORTAL_USER=alnoor
+BOOTSTRAP_PORTAL_PASSWORD=$(rand 8)
 # 以下供 --docker 模式使用；compose 会把 DATABASE_URL 覆盖成 PostgreSQL
 PG_USER=erp
 PG_PASSWORD=$(rand 16)
@@ -174,10 +176,12 @@ else
   ok "沿用现有 .env"
 fi
 # 幂等补齐：老版本 .env 缺 docker 相关键时追加，不覆盖已有值
-for key in PG_PASSWORD MINIO_PASSWORD HTTP_PORT PIP_INDEX; do
+for key in PG_PASSWORD MINIO_PASSWORD HTTP_PORT PIP_INDEX BOOTSTRAP_PORTAL_USER BOOTSTRAP_PORTAL_PASSWORD; do
   grep -q "^${key}=" "$ENV_FILE" || {
     case "$key" in
       PG_PASSWORD|MINIO_PASSWORD) echo "$key=$(rand 16)" >> "$ENV_FILE" ;;
+      BOOTSTRAP_PORTAL_USER) echo "BOOTSTRAP_PORTAL_USER=alnoor" >> "$ENV_FILE" ;;
+      BOOTSTRAP_PORTAL_PASSWORD) echo "BOOTSTRAP_PORTAL_PASSWORD=$(rand 8)" >> "$ENV_FILE" ;;
       HTTP_PORT) echo "HTTP_PORT=$HTTP_PORT" >> "$ENV_FILE" ;;
       PIP_INDEX) echo "PIP_INDEX=$PIP_INDEX" >> "$ENV_FILE" ;;
     esac
@@ -193,6 +197,8 @@ fi
 ADMIN_USER="$(sed -n 's/^BOOTSTRAP_ADMIN=//p' "$ENV_FILE" | head -1)"
 ADMIN_PASS="$(sed -n 's/^BOOTSTRAP_PASSWORD=//p' "$ENV_FILE" | head -1)"
 [[ -n "$ADMIN_PASS" ]] || die ".env 中缺少 BOOTSTRAP_PASSWORD"
+PORTAL_USER="$(sed -n 's/^BOOTSTRAP_PORTAL_USER=//p' "$ENV_FILE" | head -1)"
+PORTAL_PASS="$(sed -n 's/^BOOTSTRAP_PORTAL_PASSWORD=//p' "$ENV_FILE" | head -1)"
 
 # -----------------------------------------------------------------------------
 log "4/8 准备 Python $PYTHON_VERSION 运行时"
@@ -376,6 +382,7 @@ printf '  SPA 首页    : %s\n' "$SPA_CODE"
 printf '  管理员登录  : %s / %s（%s）\n' "$ADMIN_USER" "$ADMIN_PASS" "$LOGIN_OK"
 printf '  管理员账号  : %s\n' "$ADMIN_USER"
 printf '  管理员密码  : %s\n' "$ADMIN_PASS"
+printf '  门户账号    : %s / %s\n' "${PORTAL_USER:-alnoor}" "${PORTAL_PASS:-（沿用旧值）}"
 if [[ "$MODE" == "lite" ]]; then
   printf '  服务管理    : systemctl {status|restart|stop} %s\n' "$SERVICE"
   printf '  查看日志    : journalctl -u %s -f\n' "$SERVICE"

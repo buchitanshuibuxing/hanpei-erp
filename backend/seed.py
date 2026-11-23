@@ -2,6 +2,7 @@
 
 用法：cd backend && python seed.py
 """
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -48,6 +49,16 @@ CUSTOMERS = [
 
 def run():
     init_db()
+    # 初始账号必须读 .env（由 db.py 的 _load_dotenv 或 systemd EnvironmentFile 注入），
+    # 否则一键部署生成的随机 BOOTSTRAP_PASSWORD 只是摆设，实际仍是硬编码弱密码。
+    # 不设环境变量时保留 admin/admin123、alnoor/portal123，保证开发与测试脚本可用。
+    admin_user = os.getenv("BOOTSTRAP_ADMIN") or "admin"
+    admin_pass = os.getenv("BOOTSTRAP_PASSWORD") or "admin123"
+    portal_user = os.getenv("BOOTSTRAP_PORTAL_USER") or "alnoor"
+    portal_pass = os.getenv("BOOTSTRAP_PORTAL_PASSWORD") or "portal123"
+    users = [(admin_user, "系统管理员", "ADMIN", admin_pass)] + [
+        row for row in USERS if row[0] != "admin"
+    ]
     with SessionLocal() as db:
         # 角色与权限矩阵
         for code, name in ROLES.items():
@@ -70,7 +81,7 @@ def run():
         db.flush()
 
         # 用户
-        for username, name, role, pwd in USERS:
+        for username, name, role, pwd in users:
             if not db.query(User).filter_by(username=username).first():
                 db.add(User(username=username, name=name, role_code=role,
                             password_hash=hash_password(pwd), status="ACTIVE"))
@@ -146,8 +157,8 @@ def run():
         db.flush()
         c1 = db.query(Customer).filter_by(code="C0001").first()
         if c1 and not db.query(PortalAccount).filter_by(customer_id=c1.id).first():
-            db.add(PortalAccount(customer_id=c1.id, username="alnoor",
-                                 password_hash=hash_password("portal123"), is_active=True))
+            db.add(PortalAccount(customer_id=c1.id, username=portal_user,
+                                 password_hash=hash_password(portal_pass), is_active=True))
 
         if not db.query(Supplier).first():
             db.add(Supplier(code="S0001", name="Ningbo Auto Parts Manufacture Co., Ltd.",
