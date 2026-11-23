@@ -153,7 +153,7 @@ cd deploy && sudo bash install.sh
 
 1. 修改 `admin` 初始密码，`SECRET_KEY` / `MASTER_KEY` 纳入密钥管理；
 2. 用真实产品/客户/期初库存 Excel 走一遍数据整理，核对 OE 准确率与报价匹配率；
-3. 在 PostgreSQL 环境跑 `alembic upgrade head` + 8 套测试（当前实测在 SQLite）；
+3. 在 PostgreSQL 环境跑 `alembic upgrade head` + `run_all.py`（8 套测试 + 冒烟，当前实测在 SQLite）；
 4. 逐项确认是否启用外部能力并完成素材库/邮件/飞书联调；
 5. 补 UAT 用例与性能压测（产品搜索 < 1s、万行询价导入 < 30s、20 并发流畅）；
 6. 做一次备份恢复演练，明确「系统为主、Excel 并行核对」的切换与回退条件。

@@ -1,6 +1,6 @@
 # 汽车配件外贸 ERP 系统规划方案
 
-- 版本：v2.1（2026-11-23，**实现交付版**：按本方案从零建成可运行项目，7 套端到端测试全绿；落地差异、补充设计与验收基线见**附录 E**，v1.0.1 闭环加固见 E.8，v1.0.2 边界收口见 E.9）
+- 版本：v2.1（2026-11-23，**实现交付版**：按本方案从零建成可运行项目，8 套端到端测试 + 全链路冒烟全绿；落地差异、补充设计与验收基线见**附录 E**，v1.0.1 闭环加固见 E.8，v1.0.2 边界收口见 E.9，v1.0.3 工程加固与架构决策见 E.10）
 - 历史版本：v2.0（2026-11-19 规划交付版）、v1.4（2026-11-17 第三轮完整审计）、v1.0（初稿）
 - 适用对象：汽车配件外贸公司（约 20 人使用：业务、采购、财务、跟单、管理）
 - 业务特征：滤清器/易损件、底盘制动件、发动机与电气件；出口中东；T/T + 物流代收现金；产品以 OE 号驱动，暂不维护车型匹配
@@ -719,11 +719,11 @@ PostgreSQL   Redis     MinIO/文件存储    定时任务
 
 | 项 | 实际交付 |
 |---|---|
-| 代码 | `backend/`（FastAPI + SQLAlchemy 2）、`frontend/`（Vue 3 + Element Plus + Vite）、`deploy/`（Docker Compose / Nginx / 安装备份升级脚本）、`scripts/`（7 套端到端测试 + 冒烟）、`backend/migrations/`（Alembic 迁移链 `d3343c60b06a` → `b7e2c4a91f30`，空库建 67 张业务表 + 1 张 `alembic_version`） |
+| 代码 | `backend/`（FastAPI + SQLAlchemy 2）、`frontend/`（Vue 3 + Element Plus + Vite）、`deploy/`（Docker Compose / Nginx / 安装备份升级脚本）、`scripts/`（8 套端到端测试 + `run_all.py` 一键回归 + 冒烟）、`backend/migrations/`（Alembic 迁移链 `d3343c60b06a` → `b7e2c4a91f30`，空库建 67 张业务表 + 1 张 `alembic_version`） |
 | 数据库 | 开发零配置 SQLite（项目根 `data/erp.db`）；生产 PostgreSQL 16，`DATABASE_URL` 一键切换。JSON 字段用 `JSON().with_variant(JSONB, "postgresql")` 跨库兼容 |
 | 部署 | 单端口：后端托管前端 `dist/`，本地 `http://127.0.0.1:8008`；生产 `deploy/install.sh` 一条命令起 PostgreSQL + Redis + MinIO + 后端 + Nginx |
 | 初始账号 | `admin / admin123`（内部）、`alnoor / portal123`（门户）；首次启动自动建表 + 种子数据（7 角色 / 8 用户 / 6 产品 / 3 客户 / 仓库 / 汇率 / 收款账户） |
-| 版本管理 | Git 仓库已初始化（分支 `main`），首个 tag **`v1.0.0`** 固化本版代码基线；运行期数据（`data/*.db`、`*.key`、上传/备份）不入仓 |
+| 版本管理 | Git 仓库已初始化（分支 `main`），tag 依次为 **`v1.0.0` / `v1.0.1` / `v1.0.2` / `v1.0.3`**；其后架构决策文档提交 `fa67ecf` 未单独打 tag。运行期数据（`data/*.db`、`*.key`、上传/备份）不入仓 |
 
 ### E.2 落地时补齐的 P0 缺口（上轮审计结论）
 
@@ -767,26 +767,26 @@ PostgreSQL   Redis     MinIO/文件存储    定时任务
 ### E.5 验收基线（可复现）
 
 ```bash
-# 后端依赖（Python 3.12+）
-cd backend && python -m pip install -r requirements.txt && python seed.py
+# 后端依赖（Python 3.12+；CI / Docker / 生产一律叠加 constraints.txt 锁版本）
+cd backend && python -m pip install -r requirements.txt -c constraints.txt && python seed.py
 python -m alembic upgrade head          # 生产 PostgreSQL 前执行
 python -m uvicorn app.main:app --port 8008
 
 # 前端
-cd frontend && npm install && npm run build   # 产物由后端单端口托管
+cd frontend && npm ci && npm run build  # 按 lock 还原，产物由后端单端口托管
 
-# 7 套端到端测试（进程内 TestClient，无需起服务）
-cd backend && python ../scripts/test_quote_flow.py        # 询报价闭环
-python ../scripts/test_order_flow.py                      # 订单履约闭环
-python ../scripts/test_purchase_flow.py                   # 采购库存闭环
-python ../scripts/test_finance_flow.py                    # 财务闭环
-python ../scripts/test_stocktake_return.py                # 盘点 / 采购退货闭环
-python ../scripts/test_closure_fixes.py                   # 闭环防护回归（v1.0.1）
-python ../scripts/test_v102_boundaries.py                 # 四项边界回归（v1.0.2）
-python ../scripts/smoke_api.py                            # 全链路冒烟（30 步）
+# 8 套端到端测试 + 冒烟（进程内 TestClient，无需起服务）
+cd backend && python ../scripts/run_all.py                # 一键回归（CI 与人工共用）
+python -m compileall -q app ../scripts
+python -m ruff check app ../scripts                       # 需先 pip install ruff
+
+# run_all.py 内部按顺序执行以下 8 套 + 30 步冒烟：
+#   test_quote_flow / test_order_flow / test_purchase_flow / test_finance_flow
+#   test_stocktake_return / test_closure_fixes（v1.0.1）/ test_v102_boundaries（v1.0.2）
+#   test_engineering_guards（v1.0.3）/ smoke_api
 ```
 
-**实测结果（2026-11-23）**：5 套测试全绿；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源均返回 200；Alembic 在空库建出 66 张业务表（另含 1 张版本表）；报修的 4 个缺陷（编号撞号、SQLite 写锁死锁、幂等响应类型、移动加权成本共享状态）均已修复并回归。（以上为 v1.0.0 当时口径；v1.0.1 后为 6 套测试，v1.0.2 后为 **7 套测试 / 67 张业务表**，见 E.9。）
+**实测结果（2026-11-23）**：5 套测试全绿；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源均返回 200；Alembic 在空库建出 66 张业务表（另含 1 张版本表）；报修的 4 个缺陷（编号撞号、SQLite 写锁死锁、幂等响应类型、移动加权成本共享状态）均已修复并回归。（以上为 v1.0.0 当时口径；v1.0.1 后为 6 套测试，v1.0.2 后为 **7 套测试 / 67 张业务表**，见 E.9；v1.0.3 后为 **8 套测试 + `run_all.py` 一键回归**，见 E.10。）
 
 ### E.6 部署与运维
 
@@ -797,11 +797,11 @@ python ../scripts/smoke_api.py                            # 全链路冒烟（30
 
 ### E.7 上线前待办（按优先级）
 
-> 已完成：Git 仓库初始化 + `v1.0.0` / `v1.0.1` / `v1.0.2` tag。以下为仍需人工/现场执行的事项。
+> 已完成：Git 仓库初始化 + `v1.0.0` / `v1.0.1` / `v1.0.2` / `v1.0.3` tag（其后架构决策文档提交 `fa67ecf` 未单独打 tag）。以下为仍需人工/现场执行的事项。
 
 1. 修改 `admin` 初始密码、把 `SECRET_KEY / MASTER_KEY` 纳入密钥管理（勿留自动生成值上生产）；
 2. 用真实产品/客户/期初库存 Excel 走一遍第 8 章数据整理，核对 OE 号准确率与报价匹配率；
-3. 在 PostgreSQL 环境跑 `alembic upgrade head` + 7 套测试（当前测试在 SQLite 通过）；
+3. 在 PostgreSQL 环境跑 `alembic upgrade head` + `run_all.py`（8 套测试 + 冒烟，当前实测在 SQLite 通过）；
 4. 按 E.4 逐项确认是否启用外部能力，并完成素材库 / 邮件 / 飞书真实联调；
 5. 补 UAT 用例与性能压测（目标：产品搜索 < 1s、万行询价导入 < 30s、20 并发流畅）；
 6. 做一次备份恢复演练，记录 RPO/RTO；确认「系统为主、Excel 并行核对」的切换与回退条件。
