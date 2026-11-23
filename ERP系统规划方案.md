@@ -797,11 +797,11 @@ python -m ruff check app ../scripts                       # 需先 pip install r
 
 ### E.7 上线前待办（按优先级）
 
-> 已完成：Git 仓库初始化 + `v1.0.0` / `v1.0.1` / `v1.0.2` / `v1.0.3` tag（其后架构决策文档提交 `fa67ecf` 未单独打 tag）。以下为仍需人工/现场执行的事项。
+> 已完成：Git 仓库初始化 + `v1.0.0` / `v1.0.1` / `v1.0.2` / `v1.0.3` tag；代码已推送公开仓库 `github.com/buchitanshuibuxing/hanpei-erp`；PVE 新建 VM 上一键部署 lite / docker 双形态实测通过（见 E.11）。以下为仍需人工/现场执行的事项。
 
 1. 修改 `admin` 初始密码、把 `SECRET_KEY / MASTER_KEY` 纳入密钥管理（勿留自动生成值上生产）；
 2. 用真实产品/客户/期初库存 Excel 走一遍第 8 章数据整理，核对 OE 号准确率与报价匹配率；
-3. 在 PostgreSQL 环境跑 `alembic upgrade head` + `run_all.py`（8 套测试 + 冒烟，当前实测在 SQLite 通过）；
+3. `alembic upgrade head` 已在 PVE 的 PostgreSQL 16 容器实测通过（68 表 / head `b7e2c4a91f30` / 8 个种子用户 / 转单唯一索引，见 E.11）；**仍需在 PG 上跑一次 `run_all.py`**（8 套测试 + 冒烟目前只在 SQLite 验证）；
 4. 按 E.4 逐项确认是否启用外部能力，并完成素材库 / 邮件 / 飞书真实联调；
 5. 补 UAT 用例与性能压测（目标：产品搜索 < 1s、万行询价导入 < 30s、20 并发流畅）；
 6. 做一次备份恢复演练，记录 RPO/RTO；确认「系统为主、Excel 并行核对」的切换与回退条件。
@@ -908,3 +908,33 @@ python -m ruff check app ../scripts                       # 需先 pip install r
 | 出现耗时 > 1–2s 的旁路任务、下游不稳定或批量导入峰值 | 消息队列（先用 `outbox` 表 + 定时扫描重试，不必直接上 MQ） |
 
 以上五项与 E.10 前半段补的 CI / 依赖锁定 / lint / 日志 / 异常安全**不在同一层**：后者是把「能跑」变成「能长期维护」，与是否上平台化能力没有依赖关系。
+
+---
+
+### E.11 GitHub 托管、PVE 一键部署与真实 Linux 实测（v1.0.4，2026-11-23）
+
+**托管**：代码推送到公开仓库 `https://github.com/buchitanshuibuxing/hanpei-erp`，保留 `main` 全部提交历史与 `v1.0.0` ~ `v1.0.3` 四个 tag。GitHub App 安装令牌无法在个人账号下建仓库（`403 Resource not accessible by integration`），改用本机 Git Credential Manager 的 OAuth 凭证调 GitHub API；本机代理间歇阻断 `github.com` 时，用 Git Data API 提交。
+
+**测试环境**：PVE `10.10.20.56` 上新建 VMID 108 `hanpei-erp`，Ubuntu 22.04.5 cloud-init 镜像，2C4G / 40G / ZFS `sata-pool`，静态 IP `10.10.20.150`。
+
+**一键脚本** `deploy/onekey.sh`：8 步幂等双模式。
+
+| 模式 | 组成 | 端口 | 实测结果 |
+|---|---|---|---|
+| `lite`（默认） | `uv` 托管 Python 3.12 + SQLite + Node 22 构建前端 + systemd | 8008 | health / SPA 200、随机密码登录拿到 token、幂等重跑 21 秒 |
+| `--docker` | Compose：PostgreSQL 16 + Redis 7 + 后端 + Nginx（MinIO 可选） | 80 | 4 容器健康、health / SPA 200、登录拿到 token |
+
+国内网络适配：apt / pip 清华、npm 与 Node tarball npmmirror、docker-ce 清华、镜像加速 daocloud；GitHub git 协议偶发 `HTTP2 framing` / TLS 中断时自动回落 codeload tarball，**更新失败不再静默沿用旧代码**。
+
+**只有真实 Linux 部署才暴露、已修复的 4 类问题**（本地 Windows 与 CI 均未触发）：
+
+| # | 现象 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | `pip install -c` 报 `Constraints cannot have extras` | `constraints.txt` 写了 `psycopg[binary]==`，pip 新 resolver 禁止 | 改纯包名，补锁 `psycopg-binary` / `pydantic-core`，加静态断言 |
+| 2 | 启动报 `unable to open database file` | `.env` 相对 SQLite 路径在 systemd `WorkingDirectory=backend/` 下解析到不存在的目录 | 改绝对路径 + 旧 `.env` 自动迁移 |
+| 3 | 脚本打印的随机管理员密码登录 401 | `seed.py` 硬编码 `admin123`，未读 `BOOTSTRAP_*` | 种子读环境变量（管理员 + 门户），不设时保留开发默认值 |
+| 4 | `minio/minio:latest` 被加速源 denied，整套 compose 起不来 | 国内源拒绝 `minio/*`，而业务代码完全没用对象存储 | 固定 tag + `profiles: ["storage"]` 可选；`install.sh` 补 `deploy/.env` 软链 |
+
+**PostgreSQL 验收**：erp 容器内 `alembic upgrade head` 实跑 `d3343c60b06a → b7e2c4a91f30`；库内 **68 张表**（67 业务 + 1 版本表）、8 个种子用户、`uq_sales_orders_quotation_id` 唯一索引存在。E.7 第 3 项的「PG 迁移」部分已完成，**8 套 E2E + 冒烟在 PG 上复跑**仍待办。
+
+**未改变的内容**：业务口径、表结构、权限矩阵、状态机、利润公式、E.10 的五项架构否决均不变；本次只动部署链路与初始账号治理。

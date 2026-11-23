@@ -6,13 +6,13 @@
 
 - **代码托管**：创建公开仓库 `github.com/buchitanshuibuxing/hanpei-erp`，推送 `main` 与 `v1.0.0` ~ `v1.0.3` 全部 tag，保留完整提交历史。
 - **一键部署脚本**：新增 `deploy/onekey.sh`，双模式：`lite`（默认，系统 Python 3.12 + SQLite + 前端构建 + systemd，端口 8008）与 `--docker`（Docker Compose 起 PG / Redis / 后端 / Nginx，端口 80；MinIO 改为可选 profile）。8 步幂等流程、随机密钥、健康检查覆盖 health / SPA / 管理员登录；apt / pip / npm / Docker 全走国内镜像；`git clone` 被 TLS 干扰时自动回落 GitHub codeload tarball。
-- **真实 Linux 部署实测抓到并修复 3 个本地与 CI 都漏掉的缺陷**：
+- **真实 Linux 部署实测抓到并修复 4 类本地与 CI 都漏掉的问题**：
   1. `backend/constraints.txt` 的 `psycopg[binary]==3.3.9` 违反 pip 新 resolver「constraints 不得带 extras」，`pip install -c` 直接报错；改为纯包名并补锁 `psycopg-binary` / `pydantic-core`，加静态防护断言。
   2. `.env` 的 SQLite 相对路径在 systemd `WorkingDirectory=backend/` 下解析到不存在的目录，启动报 `unable to open database file`；改为绝对路径并让旧 `.env` 自动迁移。
   3. `backend/seed.py` 硬编码 `admin123`，未读 `.env` 的 `BOOTSTRAP_PASSWORD`，一键脚本打印的随机密码是假的、登录必然 401；改为读取 `BOOTSTRAP_ADMIN / BOOTSTRAP_PASSWORD / BOOTSTRAP_PORTAL_USER / BOOTSTRAP_PORTAL_PASSWORD`（不设时保留开发默认值），加防护断言。
-- **顺带修 `deploy/install.sh`**：compose 从 `deploy/` 目录读不到仓库根 `.env`，`${PG_PASSWORD:?}` 会直接拒绝启动；补软链，初始管理员/门户密码改随机并打印。
-- **MinIO 改为可选**：实测国内加速源对 `minio/*` 一律返回 denied，而后端代码无任何 S3 / MinIO 依赖（附件落 `data/uploads/`）；`docker-compose.yml` 固定版本标签并加 `profiles: ["storage"]`，默认不启动，不再阻断整套部署。
+  4. 国内镜像加速源对 `minio/*` 一律 denied，而后端代码无任何 S3 / MinIO 依赖（附件落 `data/uploads/`）；`docker-compose.yml` 固定版本标签并加 `profiles: ["storage"]` 默认不启动；同时修 `deploy/install.sh` 从 `deploy/` 读不到根 `.env` 导致 `${PG_PASSWORD:?}` 拒绝启动的问题（补软链）、初始密码改随机并打印；脚本更新失败时不再静默沿用旧代码，改为 codeload tarball 覆盖。
 - `SECURITY.md` 补充：种子账号仅首次初始化生效、随机凭据来源、`.env` 权限 600。
+- **VM 实测结论**：PVE VMID 108（Ubuntu 22.04.5 / 10.10.20.150）上，lite 与 `--docker` 两种形态均 health / SPA 200、随机密码登录拿到 token；PG 容器内 Alembic 跑完两段迁移，库内 68 张表、8 个种子用户、转单唯一索引齐全。逐项见规划附录 E.11 与 README「部署实测记录」。
 
 ## v1.0.3（2026-11-23）—— 工程稳健性加固
 

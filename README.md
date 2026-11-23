@@ -168,13 +168,26 @@ cd deploy && sudo bash install.sh
 备份 `bash backup.sh`（`pg_dump` + 上传目录 tar，保留 30 天，可挂 cron）；升级 `bash upgrade.sh`（备份 → 重建 → 健康检查 → 失败回滚）。
 人工三件事：域名解析、端口映射、防火墙放行 80/443。
 
+## 部署实测记录（2026-11-23）
+
+在 PVE 新建的 Ubuntu 22.04.5 虚拟机（VMID 108 / `10.10.20.150` / 2C4G / 40G / ZFS `sata-pool`）上，从 GitHub 拉取代码用 `deploy/onekey.sh` 做了完整实测：
+
+| 形态 | 命令 | 结果 | 关键验证 |
+|---|---|---|---|
+| lite | `sudo bash onekey.sh` | **通过** | health 200、SPA 200、`.env` 随机管理员密码登录拿到 token；幂等重跑 21 秒；从开发机访问 `http://10.10.20.150:8008` 返回 200 |
+| docker | `sudo bash onekey.sh --docker` | **通过** | 4 个容器健康（`erp` / `nginx` / `postgres` / `redis`），`http://10.10.20.150` 的 health / SPA 200、登录 token OK |
+
+- **PostgreSQL 迁移实测**：容器内 `alembic upgrade head` 跑完 `d3343c60b06a → b7e2c4a91f30`，库内 **68 张表**（67 业务 + `alembic_version`）、8 个种子用户、唯一索引 `uq_sales_orders_quotation_id` 均存在。
+- 实测暴露并修掉 4 类只在真实 Linux 部署才会触发的问题（constraints extras、SQLite 相对路径、种子密码未读环境变量、国内源拒绝 MinIO），逐项见 `CHANGELOG.md` v1.0.4 与规划附录 E.11。
+- 8 套端到端测试 + 30 步冒烟仍在 SQLite 跑（见「验收」）；PG 上已验证迁移、启动、健康检查与登录，**完整 E2E 回归在 PG 上再跑一遍**仍列为上线前待办。
+
 ## 上线前待办
 
 > 已完成：Git 仓库初始化（分支 `main`）+ `v1.0.0` / `v1.0.1` / `v1.0.2` / `v1.0.3` tag。以下为仍需人工/现场执行的事项。
 
-1. 修改 `admin` 初始密码，`SECRET_KEY` / `MASTER_KEY` 纳入密钥管理；
+1. 一键部署已生成随机初始密码与 `SECRET_KEY`；仍需把部署机 `.env` 纳入密钥管理（权限 600）并在系统内改一次密码；
 2. 用真实产品/客户/期初库存 Excel 走一遍数据整理，核对 OE 准确率与报价匹配率；
-3. 在 PostgreSQL 环境跑 `alembic upgrade head` + `run_all.py`（8 套测试 + 冒烟，当前实测在 SQLite）；
+3. `alembic upgrade head` 已在 PVE 的 PostgreSQL 实测通过（68 表 / head / 种子用户）；**仍需在 PG 上跑一次 `run_all.py`**（8 套测试 + 冒烟目前只在 SQLite 验证）；
 4. 逐项确认是否启用外部能力并完成素材库/邮件/飞书联调；
 5. 补 UAT 用例与性能压测（产品搜索 < 1s、万行询价导入 < 30s、20 并发流畅）；
 6. 做一次备份恢复演练，明确「系统为主、Excel 并行核对」的切换与回退条件。
