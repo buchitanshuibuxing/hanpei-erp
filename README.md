@@ -136,7 +136,27 @@ python ../scripts/run_all.py                # CI 与人工共用同一入口
 - 列表列一律用 `min-width` 弹性列（固定操作列除外），宽屏按比例拉伸填满、窄屏自动横滚，不出现「内容靠左、右侧大片空白」；
 - 全站统一 `Pager`、`.table-scroll` 固定高度内滚、破坏性动作二次确认（附录 D）。
 
-## 生产部署（Linux 一键）
+## GitHub 仓库与一键部署
+
+代码托管在 **https://github.com/buchitanshuibuxing/hanpei-erp**（`main` 分支，含 `v1.0.0` ~ `v1.0.3` tag 与完整提交历史）。
+
+在干净的 Ubuntu 22.04 / Debian 12 机器上，下载脚本后一条命令完成安装：
+
+```bash
+curl -fsSL --retry 3 --max-time 60 https://raw.githubusercontent.com/buchitanshuibuxing/hanpei-erp/main/deploy/onekey.sh -o onekey.sh
+sudo bash onekey.sh            # lite：Python 3.12 + SQLite + 前端构建 + systemd，端口 8008
+sudo bash onekey.sh --docker   # full：Docker Compose PG/Redis/MinIO/后端/Nginx，端口 80
+sudo bash onekey.sh --help
+```
+
+脚本 8 步：系统与软件源 → 获取代码 → 生成 `.env` 随机密钥 → 准备 Python 运行时 → 安装后端依赖 → 构建前端 → 启动服务 → 健康检查（health / SPA / 管理员登录）。
+
+- **幂等**：重复执行不覆盖 `.env`、数据库与数据卷；已有仓库走 `fetch + reset`，tarball 模式会提示重新执行。
+- **国内网络友好**：apt / pip / npm / Docker 全部走清华、npmmirror、daocloud 镜像；Ubuntu 22.04 自带 Python 3.10 时用 `uv` 装独立 3.12；`git clone` 被 TLS 干扰时自动回落 GitHub codeload tarball。
+- **可覆盖**：`REPO_URL BRANCH INSTALL_DIR APP_PORT HTTP_PORT PYTHON_VERSION NODE_VERSION CN_MIRROR SKIP_FRONTEND`。
+- 完成后打印随机生成的管理员密码、访问地址、日志与备份位置。lite 模式服务为 `systemctl {status|restart|stop} hanpei-erp`；docker 模式在 `deploy/` 下用 `docker compose ps/logs/down`。
+
+### 已有 Docker 时，只用原生编排
 
 ```bash
 cd deploy && sudo bash install.sh

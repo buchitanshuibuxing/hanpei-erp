@@ -154,7 +154,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 APP_ENV=production
 APP_PORT=$APP_PORT
 SERVE_FRONTEND=1
-DATABASE_URL=sqlite:///./data/erp.db
+DATABASE_URL=sqlite:///$INSTALL_DIR/data/erp.db
 SECRET_KEY=$(rand 32)
 MASTER_KEY=
 BOOTSTRAP_ADMIN=admin
@@ -183,6 +183,13 @@ for key in PG_PASSWORD MINIO_PASSWORD HTTP_PORT PIP_INDEX; do
     esac
   }
 done
+# 老版本 .env 里写的是 sqlite:///./data/erp.db（相对路径）。systemd 的 WorkingDirectory
+# 是 backend/，会解析成 backend/data/erp.db 而该目录不存在 -> "unable to open database file"。
+# 这里自动迁移成绝对路径，保证重复执行也能自愈。
+if grep -q '^DATABASE_URL=sqlite:///\./' "$ENV_FILE"; then
+  sed -i "s|^DATABASE_URL=.*|DATABASE_URL=sqlite:///$INSTALL_DIR/data/erp.db|" "$ENV_FILE"
+  warn "已把 .env 中的相对 SQLite 路径迁移为绝对路径"
+fi
 ADMIN_USER="$(sed -n 's/^BOOTSTRAP_ADMIN=//p' "$ENV_FILE" | head -1)"
 ADMIN_PASS="$(sed -n 's/^BOOTSTRAP_PASSWORD=//p' "$ENV_FILE" | head -1)"
 [[ -n "$ADMIN_PASS" ]] || die ".env 中缺少 BOOTSTRAP_PASSWORD"
@@ -264,7 +271,7 @@ fi
 # -----------------------------------------------------------------------------
 log "7/8 启动服务（模式：$MODE）"
 # -----------------------------------------------------------------------------
-mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/data/uploads"
+mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/data/uploads" "$INSTALL_DIR/backend/data"
 
 if [[ "$MODE" == "lite" ]]; then
   cat > "/etc/systemd/system/${SERVICE}.service" <<EOF

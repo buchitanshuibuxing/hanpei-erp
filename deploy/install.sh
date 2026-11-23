@@ -15,7 +15,7 @@ echo "==> 2/5 生成 .env"
 ENV_FILE="$ROOT/.env"
 if [ ! -f "$ENV_FILE" ]; then
   rand() { openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 32; }
-  PG_PASS="$(rand)"; MINIO_PASS="$(rand)"; SECRET="$(rand)$(rand)"
+  PG_PASS="$(rand)"; MINIO_PASS="$(rand)"; SECRET="$(rand)$(rand)"; ADMIN_PASS="$(rand | cut -c1-12)"
   cat > "$ENV_FILE" <<EOF
 # 由 install.sh 于 $(date '+%Y-%m-%d %H:%M:%S') 生成，请妥善保管
 PG_USER=erp
@@ -31,13 +31,19 @@ SERVE_FRONTEND=1
 HTTP_PORT=80
 PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 BOOTSTRAP_ADMIN=admin
-BOOTSTRAP_PASSWORD=admin123
+BOOTSTRAP_PASSWORD=$ADMIN_PASS
 EOF
   chmod 600 "$ENV_FILE"
   echo "   已生成 $ENV_FILE（随机密码，权限 600）"
 else
   echo "   已存在，沿用现有 .env"
 fi
+
+# compose 默认只从当前目录读 .env，而本项目 .env 在仓库根；
+# 不建软链的话 ${PG_PASSWORD:?} / ${MINIO_PASSWORD:?} 会被判为缺失，直接拒绝启动。
+if [ ! -e .env ] || [ -L .env ]; then ln -sfn ../.env .env; fi
+ADMIN_PASS="$(sed -n 's/^BOOTSTRAP_PASSWORD=//p' "$ENV_FILE" | head -1)"
+HTTP_PORT="$(sed -n 's/^HTTP_PORT=//p' "$ENV_FILE" | head -1)"; HTTP_PORT="${HTTP_PORT:-80}"
 
 echo "==> 3/5 构建镜像（首次约 3-8 分钟）"
 docker compose build --pull=false
@@ -60,5 +66,5 @@ fi
 echo ""
 echo "==> 部署完成"
 echo "    访问地址： http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 127.0.0.1):${HTTP_PORT:-80}"
-echo "    初始账号： admin / admin123 （请登录后立即修改密码）"
+echo "    初始账号： admin / $ADMIN_PASS （随机生成，见 .env；请登录后立即修改密码）"
 echo "    手动事项： 域名解析、路由器端口映射、防火墙放行 443/80（脚本无法代做）"
