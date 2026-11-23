@@ -1,5 +1,6 @@
 """报价与订单域：报价头/行、订单头/行、状态日志、变更日志。"""
-from sqlalchemy import Boolean, Column, Date, DateTime, Integer, Numeric, String, Text
+from sqlalchemy import (Boolean, Column, Date, DateTime, Index, Integer,
+                        Numeric, String, Text)
 
 from .base import Base, JSONType, Soft, TS
 
@@ -56,6 +57,8 @@ class QuotationItem(Base, TS):
 
 class SalesOrder(Base, TS, Soft):
     __tablename__ = "sales_orders"
+    # 一份报价最多生成一张订单：数据库层兜底，防止并发双击绕过应用层查询防重
+    __table_args__ = (Index("uq_sales_orders_quotation_id", "quotation_id", unique=True),)
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_no = Column(String(64), unique=True, nullable=False, index=True)
     quotation_id = Column(Integer, index=True)

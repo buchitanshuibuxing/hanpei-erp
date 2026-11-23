@@ -97,6 +97,12 @@ def get_order(oid: int, actor: Actor = Depends(require("order", "view")), db=Dep
     data["change_logs"] = [row_dict(x) for x in db.query(OrderChangeLog).filter_by(order_id=oid).all()]
     data["shipments"] = [row_dict(x) for x in db.query(Shipment).filter_by(order_id=oid).all()]
     data["received_amount"] = float(received_total(db, oid))
+    from ..models.extended import PortalConfirmation
+    cf = db.query(PortalConfirmation).filter_by(order_id=oid).first()
+    data["portal_confirmation"] = ({
+        "confirmed_at": cf.confirmed_at.isoformat() if cf.confirmed_at else "",
+        "confirm_count": cf.confirm_count, "portal_user": cf.portal_user,
+    } if cf else None)
     return data
 
 

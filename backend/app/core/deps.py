@@ -69,3 +69,16 @@ def mask(module: str, actor: Actor):
 def check_owner(row, actor: Actor):
     if actor.role == "SALES" and getattr(row, "owner_name", None) not in (None, "", actor.name):
         raise HTTPException(404, "单据不存在")
+
+
+def check_parent_owner(db, actor: Actor, parent_model, parent_id, label="父记录"):
+    """子资源写操作显式校验：父记录必须存在，且按父记录 owner_name 判定归属。
+
+    子表自身通常没有 owner_name，通用 get_row() 不会做隔离；所有按父记录派生的
+    写接口都应先调用本函数，而不是依赖隐式判断。
+    """
+    parent = db.get(parent_model, int(parent_id or 0))
+    if parent is None:
+        raise HTTPException(404, f"{label}不存在")
+    check_owner(parent, actor)
+    return parent

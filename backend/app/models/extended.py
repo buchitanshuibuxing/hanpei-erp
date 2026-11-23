@@ -1,5 +1,6 @@
 """交付版增补域：获客海关数据 / 门户账号 / 邮件归档。"""
-from sqlalchemy import Boolean, Column, Date, DateTime, Integer, Numeric, String, Text
+from sqlalchemy import (Boolean, Column, Date, DateTime, Integer, Numeric,
+                        String, Text, UniqueConstraint)
 
 from .base import Base, TS
 
@@ -43,3 +44,19 @@ class MailMessage(Base, TS):
     ref_no = Column(String(64))
     message_id = Column(String(255))
     status = Column(String(16), default="SENT")
+
+
+class PortalConfirmation(Base, TS):
+    """客户门户确认订单：只读门户也可留下可追溯的确认记录，内部可查、可催办。"""
+    __tablename__ = "portal_confirmations"
+    __table_args__ = (UniqueConstraint("order_id", "customer_id",
+                                       name="uq_portal_confirmation_order_customer"),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(Integer, nullable=False, index=True)
+    customer_id = Column(Integer, nullable=False, index=True)
+    portal_user = Column(String(64))
+    confirmed_at = Column(DateTime, nullable=False, index=True)
+    confirm_count = Column(Integer, default=1)
+    ip = Column(String(64))
+    note = Column(Text)
+    status = Column(String(16), default="CONFIRMED")

@@ -22,8 +22,19 @@
           <el-table-column prop="received" label="已付" min-width="130" />
           <el-table-column prop="balance" label="余额" min-width="130" />
           <el-table-column prop="delivery_date" label="交期" min-width="130" />
+          <el-table-column prop="confirmed" label="确认状态" min-width="140">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.confirmed ? 'success' : 'info'">
+                {{ row.confirmed ? '已确认 ' + String(row.confirmed_at || '').slice(0, 10) : '待确认' }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="110" fixed="right">
-            <template #default="{ row }"><el-button link type="primary" size="small" @click="confirm(row)">确认订单</el-button></template>
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="confirm(row)">
+                {{ row.confirmed ? '再次确认' : '确认订单' }}
+              </el-button>
+            </template>
           </el-table-column></el-table></div>
       </div>
       <div class="card">
@@ -63,6 +74,7 @@ async function load() {
 async function confirm(row) {
   const res = await post(`/portal/orders/${row.id}/confirm`, {})
   ElMessage.success(res.message || '已确认')
+  await load()
 }
 onMounted(() => { if (auth.scope === 'portal') load() })
 </script>

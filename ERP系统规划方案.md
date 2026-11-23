@@ -1,6 +1,6 @@
 # 汽车配件外贸 ERP 系统规划方案
 
-- 版本：v2.1（2026-11-23，**实现交付版**：按本方案从零建成可运行项目，6 套端到端测试全绿；落地差异、补充设计与验收基线见**附录 E**，v1.0.1 闭环加固见 E.8）
+- 版本：v2.1（2026-11-23，**实现交付版**：按本方案从零建成可运行项目，7 套端到端测试全绿；落地差异、补充设计与验收基线见**附录 E**，v1.0.1 闭环加固见 E.8，v1.0.2 边界收口见 E.9）
 - 历史版本：v2.0（2026-11-19 规划交付版）、v1.4（2026-11-17 第三轮完整审计）、v1.0（初稿）
 - 适用对象：汽车配件外贸公司（约 20 人使用：业务、采购、财务、跟单、管理）
 - 业务特征：滤清器/易损件、底盘制动件、发动机与电气件；出口中东；T/T + 物流代收现金；产品以 OE 号驱动，暂不维护车型匹配
@@ -719,7 +719,7 @@ PostgreSQL   Redis     MinIO/文件存储    定时任务
 
 | 项 | 实际交付 |
 |---|---|
-| 代码 | `backend/`（FastAPI + SQLAlchemy 2）、`frontend/`（Vue 3 + Element Plus + Vite）、`deploy/`（Docker Compose / Nginx / 安装备份升级脚本）、`scripts/`（5 套端到端测试 + 冒烟）、`backend/migrations/`（Alembic 初始迁移 `d3343c60b06a`，空库建 66 张业务表 + 1 张 `alembic_version`） |
+| 代码 | `backend/`（FastAPI + SQLAlchemy 2）、`frontend/`（Vue 3 + Element Plus + Vite）、`deploy/`（Docker Compose / Nginx / 安装备份升级脚本）、`scripts/`（7 套端到端测试 + 冒烟）、`backend/migrations/`（Alembic 迁移链 `d3343c60b06a` → `b7e2c4a91f30`，空库建 67 张业务表 + 1 张 `alembic_version`） |
 | 数据库 | 开发零配置 SQLite（项目根 `data/erp.db`）；生产 PostgreSQL 16，`DATABASE_URL` 一键切换。JSON 字段用 `JSON().with_variant(JSONB, "postgresql")` 跨库兼容 |
 | 部署 | 单端口：后端托管前端 `dist/`，本地 `http://127.0.0.1:8008`；生产 `deploy/install.sh` 一条命令起 PostgreSQL + Redis + MinIO + 后端 + Nginx |
 | 初始账号 | `admin / admin123`（内部）、`alnoor / portal123`（门户）；首次启动自动建表 + 种子数据（7 角色 / 8 用户 / 6 产品 / 3 客户 / 仓库 / 汇率 / 收款账户） |
@@ -775,16 +775,18 @@ python -m uvicorn app.main:app --port 8008
 # 前端
 cd frontend && npm install && npm run build   # 产物由后端单端口托管
 
-# 5 套端到端测试（进程内 TestClient，无需起服务）
+# 7 套端到端测试（进程内 TestClient，无需起服务）
 cd backend && python ../scripts/test_quote_flow.py        # 询报价闭环
 python ../scripts/test_order_flow.py                      # 订单履约闭环
 python ../scripts/test_purchase_flow.py                   # 采购库存闭环
 python ../scripts/test_finance_flow.py                    # 财务闭环
 python ../scripts/test_stocktake_return.py                # 盘点 / 采购退货闭环
+python ../scripts/test_closure_fixes.py                   # 闭环防护回归（v1.0.1）
+python ../scripts/test_v102_boundaries.py                 # 四项边界回归（v1.0.2）
 python ../scripts/smoke_api.py                            # 全链路冒烟（30 步）
 ```
 
-**实测结果（2026-11-23）**：5 套测试全绿；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源均返回 200；Alembic 在空库建出 66 张业务表（另含 1 张版本表）；报修的 4 个缺陷（编号撞号、SQLite 写锁死锁、幂等响应类型、移动加权成本共享状态）均已修复并回归。
+**实测结果（2026-11-23）**：5 套测试全绿；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源均返回 200；Alembic 在空库建出 66 张业务表（另含 1 张版本表）；报修的 4 个缺陷（编号撞号、SQLite 写锁死锁、幂等响应类型、移动加权成本共享状态）均已修复并回归。（以上为 v1.0.0 当时口径；v1.0.1 后为 6 套测试，v1.0.2 后为 **7 套测试 / 67 张业务表**，见 E.9。）
 
 ### E.6 部署与运维
 
@@ -795,11 +797,11 @@ python ../scripts/smoke_api.py                            # 全链路冒烟（30
 
 ### E.7 上线前待办（按优先级）
 
-> 已完成：Git 仓库初始化 + `v1.0.0` tag（2026-11-23 本轮交付时补做）。以下为仍需人工/现场执行的事项。
+> 已完成：Git 仓库初始化 + `v1.0.0` / `v1.0.1` / `v1.0.2` tag。以下为仍需人工/现场执行的事项。
 
 1. 修改 `admin` 初始密码、把 `SECRET_KEY / MASTER_KEY` 纳入密钥管理（勿留自动生成值上生产）；
 2. 用真实产品/客户/期初库存 Excel 走一遍第 8 章数据整理，核对 OE 号准确率与报价匹配率；
-3. 在 PostgreSQL 环境跑 `alembic upgrade head` + 5 套测试（当前测试在 SQLite 通过）；
+3. 在 PostgreSQL 环境跑 `alembic upgrade head` + 7 套测试（当前测试在 SQLite 通过）；
 4. 按 E.4 逐项确认是否启用外部能力，并完成素材库 / 邮件 / 飞书真实联调；
 5. 补 UAT 用例与性能压测（目标：产品搜索 < 1s、万行询价导入 < 30s、20 并发流畅）；
 6. 做一次备份恢复演练，记录 RPO/RTO；确认「系统为主、Excel 并行核对」的切换与回退条件。
@@ -825,4 +827,28 @@ python ../scripts/smoke_api.py                            # 全链路冒烟（30
 **验证**：`scripts/test_closure_fixes.py`（18 次请求）覆盖核销上限、审批单生成、出运 `OUT_SALE` 流水、催办鉴权、删除保护、采购建议在途字段、利润列表订单号、转单二次防护、按钮白名单一致性；原有 5 套端到端测试 + 30 步冒烟全部回归通过；前端重建成功。
 **布局验证**：同源 iframe 实测 `1600px` 视口 → `content=1392 / table=1313 / body=1313 / gap=0`；`2200px` 视口 → `content=1992 / table=1913 / body=1913 / gap=0`，确认列宽弹性拉伸且无右侧留白。
 
-**仍未覆盖的边界（如实保留）**：`pl-import` 未校验单批数量上限、报价转单未加数据库唯一约束（当前用查询防重，超高并发仍需唯一索引）、门户「确认订单」按设计只读不落库、部分子资源写接口仍依赖通用 `get_row()` 的归属判断而非逐接口显式校验。这些不影响主链路闭环，列入后续迭代。
+**上述 4 项边界已于 v1.0.2 全部收口，不再作为遗留项，详见 E.9。**
+
+---
+
+### E.9 附录 E.8 遗留边界收口与 v1.0.2 交付（2026-11-23）
+
+> 用户要求「把附录 E.8 那 4 项也一起做了」。本节记录 4 项的实现、事实源与可复验验收方式。
+
+| # | E.8 遗留边界 | 实现 | 事实源 |
+|---|---|---|---|
+| 1 | `pl-import` 未校验单批数量上限 | 导入按 OE 匹配订单行、拒绝非正数量；以 `ShipmentItem` 为唯一事实源新增 `_sync_shipped()` 重算 `qty_shipped`，`create_shipment` 与 `pl-import` 两条入口共用；校验单批总量 ≤ 订单总量，**重导入是替换而非累加** | `backend/app/api/shipping.py` |
+| 2 | 报价转单未加数据库唯一约束 | `SalesOrder.__table_args__` 增加 `uq_sales_orders_quotation_id` 唯一索引；新增迁移 `b7e2c4a91f30` 与启动引导 `_ensure_indexes()` 三处口径一致；转单接口加 `.with_for_update()`、`IntegrityError` 兜底与折扣审批状态检查 | `models/sales.py`、`api/quotations.py`、`app/main.py`、迁移 `b7e2c4a91f30` |
+| 3 | 门户「确认订单」只读不落库 | 新增 `portal_confirmations`（`order_id + customer_id` 唯一），持久化确认时间/账号/IP/次数；重复确认累加 `confirm_count`；首次确认通知业务员并写审计；**仍不改写订单状态/金额**，门户只读业务单据的原则不变；内部 `GET /api/portal-confirmations` 与订单详情摘要可查；前端门户显示确认状态，内部菜单新增「客户确认记录」 | `models/extended.py`、`api/extended.py`、`api/orders.py`、`frontend/src/menu.js`、`views/Portal.vue` |
+| 4 | 子资源写接口依赖通用 `get_row()` 归属判断 | 新增 `check_parent_owner()`：按**父记录** `owner_name` 显式校验；产品 OE、客户联系人/协议价、出运运费等子资源写接口全部接入 | `core/deps.py`、`api/products.py`、`api/crm.py`、`api/shipping.py` |
+
+**新增回归测试**：`scripts/test_v102_boundaries.py`（30 次请求）逐项复验——PL 导入 999 越界返回 400 且不污染 `qty_shipped`、合法导入 4 → 重导入 8（验证替换而非累加成 12）、再次 11 越界 400；转单二次 400 + 绕过应用层直插重复 `quotation_id` 触发 `IntegrityError` + `inspect()` 确认唯一索引存在；门户确认 1 → 2 次、内部列表可读、门户令牌 403、越权订单 404、订单状态/金额不变；子资源异主 404 / 同主 200 / 父不存在 404。
+
+**验证结果（本轮全部重跑）**：
+
+- 7 套端到端测试全绿（16 / 17 / 11 / 19 / 16 / 18 / 30 次请求）；30 步冒烟 `SMOKE PASSED`；
+- Alembic 空库升级 `d3343c60b06a → b7e2c4a91f30`，建出 **67 张业务表 + 1 张 `alembic_version` = 68 张**，唯一索引 `uq_sales_orders_quotation_id` 生效；
+- `npm run build` 成功（2236 modules，13.40s）；
+- 真实 HTTP 单端口服务 11 项全过：health / SPA 首页 / 静态资源 / 内部登录 / 产品列表 / 新增 `/api/portal-confirmations` 均 200，门户登录、门户订单含确认字段、门户确认真实写库、内部列表可读、门户令牌访问内部接口 403。
+
+**版本**：`v1.0.2`（Git tag）。至此 E.8 列出的边界无遗留；剩余事项仅为附录 E.7 的现场上线待办（PG 回归、密钥托管、真实数据 UAT/压测、外部能力联调、备份恢复演练），均需人工/现场执行，不是代码断点。

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ..core.crud import (as_dict, create_resource, delete_resource,
                          list_resource, update_resource)
-from ..core.deps import Actor, require
+from ..core.deps import Actor, check_parent_owner, require
 from ..core.normalize import normalize_oe
 from ..core.numbering import next_no
 from ..core.utils import num, row_dict
@@ -185,6 +185,7 @@ class OeIn(BaseModel):
 
 @router.post("/products/{pid}/oe-numbers")
 def add_oe(pid: int, body: OeIn, actor: Actor = Depends(require("product", "edit")), db=Depends(get_db)):
+    check_parent_owner(db, actor, Product, pid, "产品")
     n = normalize_oe(body.oe_no)
     if not n:
         raise HTTPException(400, "OE 号不能为空")
@@ -198,10 +199,11 @@ def add_oe(pid: int, body: OeIn, actor: Actor = Depends(require("product", "edit
 
 
 @router.delete("/products/oe-numbers/{oid}")
-def delete_oe(oid: int, _=Depends(require("product", "edit")), db=Depends(get_db)):
+def delete_oe(oid: int, actor: Actor = Depends(require("product", "edit")), db=Depends(get_db)):
     row = db.get(ProductOeNumber, oid)
     if not row:
         raise HTTPException(404, "OE 号不存在")
+    check_parent_owner(db, actor, Product, row.product_id, "产品")
     db.delete(row)
     db.commit()
     return {"message": "已删除"}

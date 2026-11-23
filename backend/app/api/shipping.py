@@ -6,10 +6,11 @@ from decimal import Decimal
 from fastapi import (APIRouter, Depends, File, HTTPException, Request,
                      UploadFile)
 from pydantic import BaseModel
+from sqlalchemy import func
 
 from ..core.audit import audit
 from ..core.crud import create_resource, list_resource
-from ..core.deps import Actor, require
+from ..core.deps import Actor, check_parent_owner, require
 from ..core.normalize import normalize_oe
 from ..core.numbering import next_no
 from ..core.utils import dec, num, row_dict
@@ -28,6 +29,27 @@ from .helpers import pdf_response, save_bytes
 router = APIRouter(prefix="/api", tags=["出运与单证"])
 
 CONTAINER_CAPACITY = {"20GP": 28.0, "40GP": 58.0, "40HQ": 68.0}  # CBM 近似可用容积
+
+
+def _sync_shipped(db, order_id, shipment_id):
+    """以 ShipmentItem 为唯一事实源重算订单行已出运数量，并卡住累计上限。
+
+    create_shipment 与 pl-import 两条入口都走这里，避免「增量累加」被改单/重导入绕过。
+    """
+    lines = db.query(SalesOrderItem).filter_by(order_id=order_id).all()
+    for line in lines:
+        other = db.query(func.coalesce(func.sum(ShipmentItem.qty), 0)).filter(
+            ShipmentItem.order_item_id == line.id,
+            ShipmentItem.shipment_id != shipment_id).scalar() or 0
+        mine = db.query(func.coalesce(func.sum(ShipmentItem.qty), 0)).filter(
+            ShipmentItem.order_item_id == line.id,
+            ShipmentItem.shipment_id == shipment_id).scalar() or 0
+        total = dec(other) + dec(mine)
+        if total > dec(line.qty) + Decimal("0.000001"):
+            raise HTTPException(400, f"分批出运数量超过订单数量：行 {line.line_no} 上限 "
+                                     f"{float(dec(line.qty))}，累计 {float(total)}")
+        line.qty_shipped = total
+    return lines
 
 
 @router.get("/shipments")
@@ -50,18 +72,20 @@ def create_shipment(body: dict, actor: Actor = Depends(require("shipment", "crea
     s = create_resource(db, Shipment, payload, actor, module="shipment")
     for it in items:
         qty = dec(it.get("qty") or 0)
-        db.add(ShipmentItem(shipment_id=s.id, order_item_id=it.get("order_item_id"),
-                            product_id=it.get("product_id"), name_snapshot=it.get("name_snapshot", ""),
+        if qty <= 0:
+            raise HTTPException(400, "出运数量必须大于 0")
+        order_item_id = it.get("order_item_id")
+        if order_item_id:
+            oi = db.get(SalesOrderItem, int(order_item_id))
+            if not oi or oi.order_id != order.id:
+                raise HTTPException(400, f"订单明细不存在：{order_item_id}")
+        db.add(ShipmentItem(shipment_id=s.id, order_item_id=order_item_id,
+                            product_id=it.get("product_id"),
+                            name_snapshot=it.get("name_snapshot", ""),
                             oe_no=it.get("oe_no", ""), qty=qty,
-                            ctn_no=it.get("ctn_no", ""), amount=dec(it.get("amount") or 0),
+                            ctn_no=it.get("ctn_no", ""),
+                            amount=dec(it.get("amount") or 0),
                             created_by=actor.name))
-        if it.get("order_item_id"):
-            oi = db.get(SalesOrderItem, int(it["order_item_id"]))
-            if oi:
-                if dec(oi.qty_shipped) + qty > dec(oi.qty):
-                    raise HTTPException(400, f"分批出运数量超过订单数量：行 {oi.line_no} 可出运 "
-                                             f"{float(dec(oi.qty) - dec(oi.qty_shipped))}，本次 {float(qty)}")
-                oi.qty_shipped = dec(oi.qty_shipped) + qty
         # 闭环：出运扣减实物库存、同步释放下单时的占用量（两者同减，可用量保持一致）。
         # 未备足货时允许负库存并留流水，采购到货自动回正，绝不静默丢失出运记录。
         if it.get("product_id") and qty > 0:
@@ -72,7 +96,7 @@ def create_shipment(body: dict, actor: Actor = Depends(require("shipment", "crea
                            note="出运扣减；未备足货时形成欠货，采购到货回正")
             stock_svc.release(db, product_id=int(it["product_id"]), warehouse_id=wh, qty=qty)
     db.flush()
-    left = db.query(SalesOrderItem).filter_by(order_id=order.id).all()
+    left = _sync_shipped(db, order.id, s.id)
     all_shipped = bool(left) and all(dec(i.qty_shipped) >= dec(i.qty) for i in left)
     apply_shipment(db, order, actor, s.id, all_shipped=all_shipped)
     db.commit()
@@ -124,6 +148,7 @@ def add_carton(sid: int, body: dict, actor: Actor = Depends(require("shipment", 
 
 @router.post("/shipments/{sid}/freight-costs")
 def add_freight(sid: int, body: dict, actor: Actor = Depends(require("shipment", "edit")), db=Depends(get_db)):
+    check_parent_owner(db, actor, Shipment, sid, "出运批次")
     row = create_resource(db, FreightCost, {**body, "shipment_id": sid}, actor)
     db.commit()
     return row_dict(row)
@@ -178,16 +203,26 @@ async def import_domestic_pl(sid: int, file: UploadFile = File(...),
         raise HTTPException(404, "出运批次不存在")
     rows, _ = read_excel(await file.read())
     preview, unmatched = [], []
+    order = db.get(SalesOrder, s.order_id) if s.order_id else None
+    order_lines = db.query(SalesOrderItem).filter_by(order_id=s.order_id).all() if s.order_id else []
+
+    def match_line(oe):
+        n = normalize_oe(oe)
+        return next((li for li in order_lines if normalize_oe(li.oe_no) == n), None)
+
     db.query(ShipmentItem).filter_by(shipment_id=sid).delete()
     db.query(ShipmentCarton).filter_by(shipment_id=sid).delete()
     db.flush()
-    for r in rows:
+    for idx, r in enumerate(rows, 2):
         oe = str(next((r[k] for k in ("OE", "OE号", "OE NO", "Part No") if k in r and r[k]), "") or "").strip()
         qty = num(next((r[k] for k in ("数量", "QTY", "Qty") if k in r and r[k]), 0))
         name_cn = str(next((r[k] for k in ("名称", "Part name", "品名") if k in r and r[k]), "") or "")
         ctn_no = str(next((r[k] for k in ("箱号", "CTN.", "CTN") if k in r and r[k]), "") or "")
-        if not oe or qty <= 0:
+        if not oe:
             continue
+        if qty <= 0:
+            raise HTTPException(400, f"装箱单第 {idx} 行数量必须大于 0")
+        line = match_line(oe)
         hit = db.query(ProductOeNumber).filter_by(oe_norm=normalize_oe(oe)).first()
         name_en = ""
         if hit:
@@ -197,11 +232,13 @@ async def import_domestic_pl(sid: int, file: UploadFile = File(...),
         if not name_en:
             unmatched.append(oe)
             name_en = name_cn
-        db.add(ShipmentItem(shipment_id=sid, product_id=hit.product_id if hit else None,
+        db.add(ShipmentItem(shipment_id=sid, order_item_id=line.id if line else None,
+                            product_id=hit.product_id if hit else None,
                             name_snapshot=name_en, oe_no=oe, qty=dec(qty), ctn_no=ctn_no,
                             amount=Decimal("0"), created_by=actor.name))
         preview.append({"oe": oe, "name_cn": name_cn, "name_en": name_en,
-                        "qty": qty, "ctn_no": ctn_no, "matched": bool(hit)})
+                        "qty": qty, "ctn_no": ctn_no, "matched": bool(hit),
+                        "order_item_id": line.id if line else None})
         size = str(next((r[k] for k in ("SIZE(M)", "SIZE", "尺寸") if k in r and r[k]), "") or "")
         dims = re.findall(r"\d+\.?\d*", size)
         if ctn_no and len(dims) >= 3:
@@ -209,6 +246,14 @@ async def import_domestic_pl(sid: int, file: UploadFile = File(...),
                                   length=dec(dims[0]), width=dec(dims[1]), height=dec(dims[2]),
                                   weight=dec(num(r.get("总重量") or 0)), created_by=actor.name))
     db.flush()
+    # 单批数量上限 + 与手工出运共用同一累计越界校验，重导入不会绕过订单数量
+    batch_total = sum(dec(i.qty) for i in
+                      db.query(ShipmentItem).filter_by(shipment_id=sid).all())
+    if order and order_lines:
+        cap = sum(dec(li.qty) for li in order_lines)
+        if batch_total > cap + Decimal("0.000001"):
+            raise HTTPException(400, f"本批装箱数量 {float(batch_total)} 超过订单总量 {float(cap)}")
+        _sync_shipped(db, order.id, sid)
     cartons = db.query(ShipmentCarton).filter_by(shipment_id=sid).all()
     s.total_ctn = len(cartons)
     s.total_cbm = sum(dec(num(c.length) * num(c.width) * num(c.height)) for c in cartons)

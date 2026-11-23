@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from ..core.audit import audit
 from ..core.crud import (as_dict, create_resource, delete_resource,
                          list_resource, update_resource)
-from ..core.deps import Actor, require
+from ..core.deps import Actor, check_parent_owner, require
 from ..core.normalize import normalize_oe
 from ..core.numbering import next_no
 from ..core.utils import num, row_dict
@@ -129,14 +129,19 @@ def contacts(request: Request, actor: Actor = Depends(require("crm", "view")), d
 
 @router.post("/customer-contacts")
 def add_contact(body: dict, actor: Actor = Depends(require("crm", "create")), db=Depends(get_db)):
+    check_parent_owner(db, actor, Customer, body.get("customer_id"), "客户")
     row = create_resource(db, CustomerContact, body, actor)
     db.commit()
     return row_dict(row)
 
 
 @router.delete("/customer-contacts/{rid}")
-def del_contact(rid: int, _=Depends(require("crm", "edit")), db=Depends(get_db)):
-    delete_resource(db, CustomerContact, rid)
+def del_contact(rid: int, actor: Actor = Depends(require("crm", "edit")), db=Depends(get_db)):
+    row = db.get(CustomerContact, rid)
+    if not row:
+        raise HTTPException(404, "联系人不存在")
+    check_parent_owner(db, actor, Customer, row.customer_id, "客户")
+    delete_resource(db, CustomerContact, rid, actor)
     db.commit()
     return {"message": "已删除"}
 
@@ -148,14 +153,19 @@ def price_items(request: Request, actor: Actor = Depends(require("crm", "view"))
 
 @router.post("/customer-price-items")
 def add_price_item(body: dict, actor: Actor = Depends(require("crm", "edit")), db=Depends(get_db)):
+    check_parent_owner(db, actor, Customer, body.get("customer_id"), "客户")
     row = create_resource(db, CustomerPriceItem, body, actor)
     db.commit()
     return row_dict(row)
 
 
 @router.delete("/customer-price-items/{rid}")
-def del_price_item(rid: int, _=Depends(require("crm", "edit")), db=Depends(get_db)):
-    delete_resource(db, CustomerPriceItem, rid)
+def del_price_item(rid: int, actor: Actor = Depends(require("crm", "edit")), db=Depends(get_db)):
+    row = db.get(CustomerPriceItem, rid)
+    if not row:
+        raise HTTPException(404, "协议价不存在")
+    check_parent_owner(db, actor, Customer, row.customer_id, "客户")
+    delete_resource(db, CustomerPriceItem, rid, actor)
     db.commit()
     return {"message": "已删除"}
 

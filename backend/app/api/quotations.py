@@ -5,6 +5,7 @@ from decimal import Decimal
 from fastapi import (APIRouter, Depends, File, HTTPException, Request,
                      UploadFile)
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from ..core.audit import audit
 from ..core.crud import as_dict, list_resource, update_resource
@@ -281,7 +282,8 @@ def send_quotation(qid: int, body: SendIn, actor: Actor = Depends(require("quota
 
 @router.post("/quotations/{qid}/convert")
 def convert_to_order(qid: int, actor: Actor = Depends(require("order", "create")), db=Depends(get_db)):
-    q = db.get(Quotation, qid)
+    # PostgreSQL 下行锁；SQLite 为 no-op，最终由唯一索引兜底
+    q = db.query(Quotation).filter(Quotation.id == qid).with_for_update().first()
     if not q:
         raise HTTPException(404, "报价单不存在")
     check_owner(q, actor)
@@ -308,7 +310,11 @@ def convert_to_order(qid: int, actor: Actor = Depends(require("order", "create")
                        source_channel=c.source_channel if c else None,
                        source_ref=c.source_ref if c else None, created_by=actor.name)
     db.add(order)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(400, "该报价已生成订单（并发冲突），请刷新后重试")
     for i in db.query(QuotationItem).filter_by(quotation_id=qid).order_by(QuotationItem.line_no).all():
         db.add(SalesOrderItem(order_id=order.id, line_no=i.line_no, product_id=i.product_id,
                               oe_no=i.oe_no, name_snapshot=i.name_snapshot,

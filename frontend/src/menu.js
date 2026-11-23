@@ -257,6 +257,13 @@ export const RESOURCES = {
       c('last_login_at', '最后登录', 160), c('created_at', '创建时间', 160)],
     form: [f('username', '登录名'), f('customer_id', '客户ID', 'number'), f('password', '初始密码')],
   },
+  'portal-confirmations': {
+    title: '客户确认记录', endpoint: '/portal-confirmations', module: 'order', search: true,
+    columns: [c('order_id', '订单ID', 100), c('customer_id', '客户ID', 100),
+      c('portal_user', '门户账号', 140), c('confirmed_at', '确认时间', 180),
+      c('confirm_count', '确认次数', 110), c('ip', '来源IP', 140),
+      c('status', '状态', 110, 'tag')],
+  },
   users: {
     title: '用户管理', endpoint: '/system/users', module: 'system', search: true,
     columns: [c('username', '账号', 130), c('name', '姓名', 120), c('role_code', '角色', 120),
@@ -318,6 +325,7 @@ export const MENUS = [
     { path: '/social-posts', title: '发帖记录' }, { path: '/customs-records', title: '海关数据' },
     { path: '/mails', title: '邮件归档' }, { path: '/settings', title: '系统参数' },
     { path: '/users', title: '用户管理' }, { path: '/portal-accounts', title: '门户账号' },
+    { path: '/portal-confirmations', title: '客户确认记录' },
     { path: '/audit-logs', title: '操作日志' }, { path: '/notifications', title: '通知中心' },
     { path: '/portal', title: '客户门户' }] },
 ]

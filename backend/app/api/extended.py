@@ -4,11 +4,13 @@ from datetime import datetime
 from fastapi import (APIRouter, Depends, File, HTTPException, Request,
                      UploadFile)
 
+from ..core.audit import audit, notify
 from ..core.crud import create_resource, list_resource
 from ..core.deps import Actor, portal_actor, require
 from ..core.utils import dec, num, row_dict
 from ..db import get_db
-from ..models.extended import CustomsRecord, MailMessage, PortalAccount
+from ..models.extended import (CustomsRecord, MailMessage, PortalAccount,
+                               PortalConfirmation)
 from ..models.crm import Customer, Lead
 from ..models.finance import Payment, PaymentAllocation, Refund
 from ..models.sales import SalesOrder, SalesOrderItem
@@ -37,14 +39,20 @@ def portal_profile(actor: Actor = Depends(portal_actor), db=Depends(get_db)):
 @router.get("/portal/orders")
 def portal_orders(actor: Actor = Depends(portal_actor), db=Depends(get_db)):
     rows = db.query(SalesOrder).filter_by(customer_id=actor.customer_id).order_by(SalesOrder.id.desc()).all()
+    confirms = {c.order_id: c for c in
+                db.query(PortalConfirmation).filter_by(customer_id=actor.customer_id).all()}
     out = []
     for o in rows:
         received = sum(dec(a.amount) for a in
                        db.query(PaymentAllocation).filter_by(target_type="ORDER", target_id=o.id).all())
+        cf = confirms.get(o.id)
         out.append({"id": o.id, "order_no": o.order_no, "status": o.status,
                     "currency": o.currency, "total": num(o.total),
                     "received": float(received), "balance": float(dec(o.total) - received),
-                    "delivery_date": str(o.delivery_date or ""), "etd": ""})
+                    "delivery_date": str(o.delivery_date or ""), "etd": "",
+                    "confirmed": bool(cf),
+                    "confirmed_at": cf.confirmed_at.isoformat() if cf and cf.confirmed_at else "",
+                    "confirm_count": cf.confirm_count if cf else 0})
     return out
 
 
@@ -84,12 +92,47 @@ def portal_statement(actor: Actor = Depends(portal_actor), db=Depends(get_db)):
 
 
 @router.post("/portal/orders/{oid}/confirm")
-def portal_confirm(oid: int, actor: Actor = Depends(portal_actor), db=Depends(get_db)):
+def portal_confirm(oid: int, request: Request,
+                   actor: Actor = Depends(portal_actor), db=Depends(get_db)):
+    """门户确认订单：只读原则不变（不改写订单状态/金额），但确认动作本身持久化。"""
     o = db.get(SalesOrder, oid)
     if not o or o.customer_id != actor.customer_id:
         raise HTTPException(404, "订单不存在")
-    return {"order_no": o.order_no, "confirmed_at": datetime.utcnow().isoformat(),
-            "message": "客户已确认（只读门户不改写内部单据）"}
+    if o.status == "CANCELLED":
+        raise HTTPException(400, "已取消的订单不能确认")
+    now = datetime.utcnow()
+    ip = request.client.host if request.client else ""
+    row = db.query(PortalConfirmation).filter_by(order_id=oid,
+                                                  customer_id=actor.customer_id).first()
+    if row:
+        row.confirm_count = (row.confirm_count or 1) + 1
+        row.confirmed_at = now
+        row.portal_user = actor.username
+        row.ip = ip
+        detail = "重复确认"
+    else:
+        row = PortalConfirmation(order_id=oid, customer_id=actor.customer_id,
+                                 portal_user=actor.username, confirmed_at=now,
+                                 confirm_count=1, ip=ip, status="CONFIRMED")
+        db.add(row)
+        if o.owner_name:
+            notify(db, o.owner_name, f"客户确认订单 {o.order_no}",
+                   f"客户 {actor.name or actor.username} 已在门户确认订单 {o.order_no}，请及时跟进。",
+                   ref_type="order", ref_id=oid)
+        detail = "首次确认"
+    audit(db, actor, "portal.order.confirm", "sales_orders", oid,
+          detail=f"{detail} {o.order_no}", ip=ip)
+    db.commit()
+    return {"order_no": o.order_no, "confirmed_at": now.isoformat(),
+            "confirm_count": row.confirm_count, "confirmed": True,
+            "message": "已记录客户确认，业务员将收到站内通知"}
+
+
+@router.get("/portal-confirmations")
+def portal_confirmations(request: Request,
+                         actor: Actor = Depends(require("order", "view")), db=Depends(get_db)):
+    """内部查看客户确认记录（门户令牌不可访问本接口）。"""
+    return list_resource(db, PortalConfirmation, actor, "order", request)
 
 
 @router.get("/portal-accounts")

@@ -31,6 +31,7 @@ from .finance import (  # noqa: F401
     AfterSalesClaim, BankAccount, Commission, Expense, ForexRate, Forwarder,
     OrderProfit, Payment, PaymentAllocation, Rebate, Refund,
 )
-from .extended import CustomsRecord, MailMessage, PortalAccount  # noqa: F401
+from .extended import (CustomsRecord, MailMessage, PortalAccount,  # noqa: F401
+                       PortalConfirmation)
 
 __all__ = ["Base", "JSONType", "TS", "Soft"]

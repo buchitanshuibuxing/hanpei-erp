@@ -2,8 +2,9 @@
 
 > 按《ERP系统规划方案.md》v2.1 与《核心数据结构设计.md》v2.1 **从零建成的可运行完整项目**（2026-11-23）。
 > 2026-11-23 晚追加 **v1.0.1 闭环加固**：内容区满屏自适应 + 全链路闭环审计修复（见规划附录 E.8）。
+> 2026-11-23 追加 **v1.0.2 边界收口**：PL 导入数量上限、转单唯一约束、门户确认落库、子资源归属显式校验（见规划附录 E.9）。
 > 业务主线：产品库 → 快速报价 → 销售订单 → 采购库存 → 出运单证 → 财务核算。
-> 6 套端到端测试 + 全链路冒烟全绿；实现差异、业务口径、验收基线见规划方案**附录 E**，字段与表清单回写见数据结构设计**第 14 节**。
+> 7 套端到端测试 + 全链路冒烟全绿；实现差异、业务口径、验收基线见规划方案**附录 E**，字段与表清单回写见数据结构设计**第 14 节**。
 
 ## 技术栈与部署形态
 
@@ -38,7 +39,7 @@ npm run build
 | 内部系统 | `admin` | `admin123` |
 | 客户门户（登录页切换） | `alnoor` | `portal123` |
 
-首次启动会自动建 66 张业务表并初始化 7 个角色 / 8 个用户 / 6 个产品 / 3 个客户 / 仓库 / 汇率 / 收款账户。种子数据可用 `python seed.py` 重复执行（幂等）。
+首次启动会自动建 67 张业务表并初始化 7 个角色 / 8 个用户 / 6 个产品 / 3 个客户 / 仓库 / 汇率 / 收款账户。种子数据可用 `python seed.py` 重复执行（幂等）。
 
 **前端热更新开发**：`cd frontend && npm run dev` → http://localhost:5173，`/api` 已代理到 `127.0.0.1:8008`。
 开发机固定用 **8008**（避让 C-Lodop 打印插件占用的 8000）；生产 Docker 用 80/443。
@@ -60,11 +61,11 @@ npm run build
 
 ```
 backend/
-  app/models/     9 个模型文件，66 张表（按域拆分）
+  app/models/     9 个模型文件，67 张业务表（按域拆分）
   app/core/       权限矩阵、数据隔离、编号 CAS、审计、加密、通用 CRUD
   app/services/   库存移动加权、订单状态机、利润口径、PDF/Excel、自动催办
   app/api/        15 个路由模块（产品/CRM/报价/订单/采购库存/出运/财务/报表/系统/门户…）
-  migrations/     Alembic 初始迁移 d3343c60b06a
+  migrations/     Alembic 迁移链 d3343c60b06a（初始 66 表）→ b7e2c4a91f30（+portal_confirmations / 转单唯一索引）
   seed.py         种子数据
 frontend/
   src/menu.js     RESOURCES + MENUS 单一配置源（驱动路由/列表/表单/菜单）
@@ -72,7 +73,7 @@ frontend/
   src/views/      工作台、报价编辑、订单详情、报表、系统参数、门户、登录
   public/         PWA manifest + Service Worker
 deploy/           Dockerfile、docker-compose.yml、nginx.conf、install.sh、backup.sh、upgrade.sh
-scripts/          5 套端到端测试 + smoke_api.py 全链路冒烟 + 测试公共封装
+scripts/          7 套端到端测试 + smoke_api.py 全链路冒烟 + 测试公共封装
 data/             运行期生成：erp.db、uploads/、backups/、master.key（已在 .gitignore）
 ```
 
@@ -84,14 +85,14 @@ data/             运行期生成：erp.db、uploads/、backups/、master.key（
 |---|---|
 | 产品 | OE 归一化匹配（`25100-03011 → 2510003011`）、CRUD、Excel 批量导入/导出、图片 OE 匹配、水印模板、HS 编码/申报要素/退税率/底价/安全库存 |
 | CRM | 客户、联系人、客户协议价、供应商、线索、跟进、客户 360、发帖记录 |
-| 询报价 | 粘贴/Excel OE 三色匹配、自动带价（协议价优先）、折扣与审批、QT PDF、发送打点、转订单、F2 快速查价 |
-| 销售订单 | 状态机自动流转、分批出运（数量上限校验）、PI PDF、状态日志、收款登记、业务员数据隔离 |
+| 询报价 | 粘贴/Excel OE 三色匹配、自动带价（协议价优先）、折扣与审批、QT PDF、发送打点、转订单（应用层 + 数据库唯一索引双重防重）、F2 快速查价 |
+| 销售订单 | 状态机自动流转、分批出运（数量上限校验）、PI PDF、状态日志、收款登记、业务员数据隔离、回传客户门户确认摘要 |
 | 采购库存 | 采购建议、采购单、分批到货、采购退货、多仓库、移动加权成本、库存流水/批次、期初导入、盘点确认自动调账 |
-| 出运单证 | 出运批次、分箱明细、拼柜建议、客户版 PL PDF、国内 PL 导入、单证清单 |
+| 出运单证 | 出运批次、分箱明细、拼柜建议、客户版 PL PDF、国内 PL 导入（单批数量上限 + 重导入替换不累加）、单证清单 |
 | 财务 | 收款核销（一收核多单）、付款审批、退款、汇率、退税、费用、利润核算 v1、提成（按已核销回款）、账龄、售后索赔、三方对账 |
 | 系统 | 7 角色权限矩阵、成本字段脱敏、操作审计、站内通知、系统参数（敏感键加密）、功能开关、编号规则、备份 |
 | 报表 | 工作台 KPI + 销售趋势、销售/产品/渠道/利润报表、漏斗、库存健康 |
-| 客户门户 | `scope=portal` 令牌隔离，只读订单/单证/对账；门户令牌访问内部接口一律 403 |
+| 客户门户 | `scope=portal` 令牌隔离，只读订单/单证/对账；「确认订单」持久化落库、重复确认计数、通知业务员，但不改写订单状态/金额；门户令牌访问内部接口一律 403 |
 
 **按 MVP 收敛原则保留为开关/占位（默认关闭，未做真实联调）**：素材库 API、SMTP/IMAP 实收发、OCR 图片询价、Maps/Facebook 自动采集、browser-use Agent、MCP Server 实体、Chrome 剪藏扩展、飞书推送。
 **未做**：Electron/Tauri 桌面客户端（改由 PWA 替代）、阿拉伯语 RTL PDF（QT/PI/PL 为英文版式）、多语言 i18n、车型匹配。逐项原因见规划附录 E.4。
@@ -106,11 +107,12 @@ python ../scripts/test_purchase_flow.py     # 采购库存闭环（11 次请求�
 python ../scripts/test_finance_flow.py      # 财务闭环（19 次请求，含幂等/门户隔离）
 python ../scripts/test_stocktake_return.py  # 盘点 / 采购退货闭环（16 次请求）
 python ../scripts/test_closure_fixes.py     # 闭环防护回归（18 次请求，v1.0.1）
+python ../scripts/test_v102_boundaries.py   # v1.0.2 四项边界回归（30 次请求）
 python ../scripts/smoke_api.py              # 全链路冒烟
 python -m alembic upgrade head              # 空库迁移验证（生产 PG 前必跑）
 ```
 
-测试用进程内 `TestClient`，无需起服务。实测结果：**6 套全绿**；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源全部 200；Alembic 空库建出 66 张业务表。
+测试用进程内 `TestClient`，无需起服务。实测结果：**7 套全绿**；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源、新增的 `/api/portal-confirmations` 全部 200，门户确认真实写库且内部列表可读、门户令牌访问内部接口 403；Alembic 空库建出 **67 张业务表 + 1 张 `alembic_version` = 68 张**，head `b7e2c4a91f30`。
 
 ## UI 布局约定
 
@@ -131,11 +133,11 @@ cd deploy && sudo bash install.sh
 
 ## 上线前待办
 
-> 已完成：Git 仓库初始化（分支 `main`）+ `v1.0.0` tag。以下为仍需人工/现场执行的事项。
+> 已完成：Git 仓库初始化（分支 `main`）+ `v1.0.0` / `v1.0.1` / `v1.0.2` tag。以下为仍需人工/现场执行的事项。
 
 1. 修改 `admin` 初始密码，`SECRET_KEY` / `MASTER_KEY` 纳入密钥管理；
 2. 用真实产品/客户/期初库存 Excel 走一遍数据整理，核对 OE 准确率与报价匹配率；
-3. 在 PostgreSQL 环境跑 `alembic upgrade head` + 5 套测试（当前实测在 SQLite）；
+3. 在 PostgreSQL 环境跑 `alembic upgrade head` + 7 套测试（当前实测在 SQLite）；
 4. 逐项确认是否启用外部能力并完成素材库/邮件/飞书联调；
 5. 补 UAT 用例与性能压测（产品搜索 < 1s、万行询价导入 < 30s、20 并发流畅）；
 6. 做一次备份恢复演练，明确「系统为主、Excel 并行核对」的切换与回退条件。
@@ -146,7 +148,7 @@ cd deploy && sudo bash install.sh
 
 | 文件 | 作用 |
 |---|---|
-| `ERP系统规划方案.md` v2.1 | 14 模块功能规划、状态机、UI 规范、附录 E 实现差异与验收基线 |
+| `ERP系统规划方案.md` v2.1 | 14 模块功能规划、状态机、UI 规范、附录 E 实现差异与验收基线（E.8 闭环审计 / E.9 边界收口） |
 | `核心数据结构设计.md` v2.1 | 数据字典、ER 图、权限模型，第 14 节为代码回写校准 |
 | `素材库API开发指南（交底版）.md` | 素材库对接规范（`oe_norm` / `match-batch` / HMAC Webhook / 验收清单），ERP 侧开关待联调 |
 | `README.md` | 本文件：安装、运行、测试、部署、验收 |

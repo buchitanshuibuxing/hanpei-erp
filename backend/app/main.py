@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .core.deps import require
-from .db import ROOT, SessionLocal, init_db
+from .db import ROOT, SessionLocal, engine, init_db
 from .models.system import IdempotencyKey, User
 
 sys.path.insert(0, str(ROOT / "backend"))
@@ -26,8 +26,23 @@ sys.path.insert(0, str(ROOT / "backend"))
 _scheduler = None
 
 
+def _ensure_indexes():
+    """对 create_all 建出来的老库补齐唯一索引（新库由模型 __table_args__ 自带）。
+
+    生产走 Alembic 迁移；这里是开发/单机 SQLite 模式的幂等校准，SQL 在 PG/SQLite 均可用。
+    """
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_orders_quotation_id "
+                              "ON sales_orders (quotation_id)"))
+        except Exception as exc:
+            print(f"[warn] 唯一索引 uq_sales_orders_quotation_id 未创建（可能存在重复报价引用）：{exc}")
+
+
 def _bootstrap():
     init_db()
+    _ensure_indexes()
     with SessionLocal() as db:
         if db.query(User).count() == 0:
             import seed
