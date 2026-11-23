@@ -46,23 +46,23 @@
       </div>
       <div class="table-scroll">
         <el-table :data="items" size="small" border height="300">
-          <el-table-column prop="line_no" label="#" width="50" />
-          <el-table-column prop="oe_no" label="OE NO." width="150" />
+          <el-table-column prop="line_no" label="#" min-width="50" />
+          <el-table-column prop="oe_no" label="OE NO." min-width="150" />
           <el-table-column prop="name_snapshot" label="PRODUCT NAME" min-width="180" />
-          <el-table-column prop="match_status" label="匹配" width="110">
+          <el-table-column prop="match_status" label="匹配" min-width="110">
             <template #default="{ row }">
               <el-tag size="small" :type="row.match_status === 'MATCHED' ? 'success' : row.match_status === 'SUBSTITUTED' ? 'warning' : 'danger'">
                 {{ row.match_status }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="package_snapshot" label="PACKAGE" width="100" />
-          <el-table-column label="QTY" width="110">
+          <el-table-column prop="package_snapshot" label="PACKAGE" min-width="100" />
+          <el-table-column label="QTY" min-width="110">
             <template #default="{ row }"><el-input v-model.number="row.qty" type="number" size="small" @change="recalc" /></template>
           </el-table-column>
-          <el-table-column label="UNIT PRICE" width="130">
+          <el-table-column label="UNIT PRICE" min-width="130">
             <template #default="{ row }"><el-input v-model.number="row.unit_price" type="number" size="small" @change="recalc" /></template>
           </el-table-column>
-          <el-table-column label="AMOUNT" width="120"><template #default="{ row }">{{ ((row.qty || 0) * (row.unit_price || 0)).toFixed(2) }}</template></el-table-column>
+          <el-table-column label="AMOUNT" min-width="120"><template #default="{ row }">{{ ((row.qty || 0) * (row.unit_price || 0)).toFixed(2) }}</template></el-table-column>
           <el-table-column label="操作" width="80" fixed="right">
             <template #default="{ $index }"><el-button link type="danger" size="small" @click="items.splice($index, 1)">移除</el-button></template>
           </el-table-column>

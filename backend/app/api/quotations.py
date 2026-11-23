@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ..core.audit import audit
 from ..core.crud import as_dict, list_resource, update_resource
-from ..core.deps import Actor, require
+from ..core.deps import Actor, check_owner, require
 from ..core.normalize import normalize_oe, parse_oe_list
 from ..core.numbering import next_no
 from ..core.settings_service import get, get_float
@@ -192,6 +192,7 @@ def update_quotation(qid: int, body: dict, actor: Actor = Depends(require("quota
     q = db.get(Quotation, qid)
     if not q:
         raise HTTPException(404, "报价单不存在")
+    check_owner(q, actor)
     if q.status == "CONVERTED":
         raise HTTPException(400, "已转订单的报价不可修改")
     items = body.pop("items", None)
@@ -222,16 +223,20 @@ def delete_quotation(qid: int, actor: Actor = Depends(require("quotation", "edit
     q = db.get(Quotation, qid)
     if not q:
         raise HTTPException(404, "报价单不存在")
+    check_owner(q, actor)
+    if db.query(SalesOrder).filter_by(quotation_id=qid).first():
+        raise HTTPException(400, "该报价已转订单，不能删除")
     q.deleted_at = datetime.utcnow()
     db.commit()
     return {"message": "已删除"}
 
 
 @router.get("/quotations/{qid}/pdf")
-def quotation_pdf(qid: int, _=Depends(require("quotation", "export")), db=Depends(get_db)):
+def quotation_pdf(qid: int, actor: Actor = Depends(require("quotation", "export")), db=Depends(get_db)):
     q = db.get(Quotation, qid)
     if not q:
         raise HTTPException(404, "报价单不存在")
+    check_owner(q, actor)
     if q.status == "PENDING_APPROVAL":
         raise HTTPException(400, "折扣超阈值，需先审批通过才能发送/导出")
     bank = db.get(BankAccount, q.bank_account_id) if q.bank_account_id else db.query(BankAccount).filter_by(is_active=True).first()
@@ -241,8 +246,11 @@ def quotation_pdf(qid: int, _=Depends(require("quotation", "export")), db=Depend
 
 
 @router.get("/quotations/{qid}/excel")
-def quotation_excel(qid: int, _=Depends(require("quotation", "export")), db=Depends(get_db)):
+def quotation_excel(qid: int, actor: Actor = Depends(require("quotation", "export")), db=Depends(get_db)):
     q = db.get(Quotation, qid)
+    if not q:
+        raise HTTPException(404, "报价单不存在")
+    check_owner(q, actor)
     items = db.query(QuotationItem).filter_by(quotation_id=qid).order_by(QuotationItem.line_no).all()
     headers = ["#", "OE NO.", "PRODUCT NAME", "PACKAGE", "UNIT", "QTY", "UNIT PRICE", "AMOUNT"]
     rows = [[i.line_no, i.oe_no, i.name_snapshot, i.package_snapshot, i.unit,
@@ -260,6 +268,7 @@ def send_quotation(qid: int, body: SendIn, actor: Actor = Depends(require("quota
     q = db.get(Quotation, qid)
     if not q:
         raise HTTPException(404, "报价单不存在")
+    check_owner(q, actor)
     if q.status == "PENDING_APPROVAL":
         raise HTTPException(400, "折扣待审批，暂不能发送")
     q.sent_at = datetime.utcnow()
@@ -275,8 +284,11 @@ def convert_to_order(qid: int, actor: Actor = Depends(require("order", "create")
     q = db.get(Quotation, qid)
     if not q:
         raise HTTPException(404, "报价单不存在")
-    if q.status == "CONVERTED":
+    check_owner(q, actor)
+    if q.status == "CONVERTED" or db.query(SalesOrder).filter_by(quotation_id=qid).first():
         raise HTTPException(400, "该报价已转订单")
+    if q.status in ("PENDING_APPROVAL", "REJECTED"):
+        raise HTTPException(400, "报价未通过折扣审批，不能转订单")
     c = db.get(Customer, q.customer_id)
     terms = q.payment_terms_json or DEFAULT_TERMS
     deposit_pct = sum(num(t.get("pct")) for t in terms if "deposit" in str(t.get("label", "")).lower()) or 30

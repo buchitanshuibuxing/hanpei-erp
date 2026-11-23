@@ -21,7 +21,7 @@
         <div class="page-title" style="font-size: 14px; margin-bottom: 8px">订单状态分布</div>
         <el-table :data="statusRows" size="small" class="table-scroll sm">
           <el-table-column prop="status" label="状态" />
-          <el-table-column prop="count" label="订单数" width="90" />
+          <el-table-column prop="count" label="订单数" min-width="90" />
         </el-table>
       </div>
     </div>
@@ -29,10 +29,10 @@
       <div class="card">
         <div class="page-title" style="font-size: 14px; margin-bottom: 8px">低库存预警</div>
         <el-table :data="data.low_stock || []" size="small" class="table-scroll sm">
-          <el-table-column prop="code" label="编码" width="110" />
+          <el-table-column prop="code" label="编码" min-width="110" />
           <el-table-column prop="name" label="品名" />
-          <el-table-column prop="qty" label="库存" width="80" />
-          <el-table-column prop="safety" label="安全线" width="80" />
+          <el-table-column prop="qty" label="库存" min-width="80" />
+          <el-table-column prop="safety" label="安全线" min-width="80" />
         </el-table>
       </div>
       <div class="card">

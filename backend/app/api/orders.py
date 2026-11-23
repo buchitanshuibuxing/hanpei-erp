@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from ..core.audit import audit
 from ..core.crud import as_dict, list_resource
-from ..core.deps import Actor, require
+from ..core.deps import Actor, check_owner, require
 from ..core.numbering import next_no
 from ..core.utils import dec, num, row_dict
 from ..db import get_db
@@ -66,7 +66,10 @@ def create_order(body: dict, actor: Actor = Depends(require("order", "create")),
 
 @router.get("/orders/export/all")
 def export_orders(actor: Actor = Depends(require("order", "export")), db=Depends(get_db)):
-    rows = db.query(SalesOrder).filter(SalesOrder.deleted_at.is_(None)).all()
+    rows = db.query(SalesOrder).filter(SalesOrder.deleted_at.is_(None))
+    if actor.role == "SALES":
+        rows = rows.filter(SalesOrder.owner_name == actor.name)
+    rows = rows.all()
     headers = ["订单号", "客户", "业务员", "币种", "总额", "已收", "状态", "交期", "账期起算日"]
     from ..services.order_state import received_total
     data = []
@@ -102,12 +105,16 @@ def update_order(oid: int, body: dict, actor: Actor = Depends(require("order", "
     o = db.get(SalesOrder, oid)
     if not o:
         raise HTTPException(404, "订单不存在")
+    check_owner(o, actor)
     for key in ("unit_price", "qty", "delivery_date", "total", "discount"):
         if key in body and str(body[key]) != str(getattr(o, key, "")):
             db.add(OrderChangeLog(created_at=datetime.utcnow(), order_id=oid, field=key,
                                   old_value=str(getattr(o, key, "")), new_value=str(body[key]),
                                   operator_name=actor.name))
     items = body.pop("items", None)
+    if items is not None and any(dec(i.qty_shipped) > 0 for i in
+                                 db.query(SalesOrderItem).filter_by(order_id=oid).all()):
+        raise HTTPException(400, "订单已有出运记录，不能重建明细（会丢失已出运数量）")
     for k, v in body.items():
         if hasattr(SalesOrder, k) and k not in ("id", "order_no", "created_at"):
             setattr(o, k, v)
@@ -137,6 +144,7 @@ def set_status(oid: int, body: StatusIn, actor: Actor = Depends(require("order",
     o = db.get(SalesOrder, oid)
     if not o:
         raise HTTPException(404, "订单不存在")
+    check_owner(o, actor)
     transition(db, o, body.status, actor, "MANUAL", note=body.note)
     audit(db, actor, "order.status", "sales_orders", oid, detail=f"{o.status}（人工）")
     db.commit()
@@ -148,18 +156,28 @@ def cancel_order(oid: int, reason: str = "", actor: Actor = Depends(require("ord
     o = db.get(SalesOrder, oid)
     if not o:
         raise HTTPException(404, "订单不存在")
+    check_owner(o, actor)
+    if o.status in ("CLOSED", "CANCELLED"):
+        raise HTTPException(400, "已结案或已取消的订单不能再次取消")
+    # 走状态机写日志，并释放未出运部分的库存占用，避免占用只增不减
+    transition(db, o, "CANCELLED", actor, "MANUAL", note=reason or "取消订单")
     o.deleted_at = datetime.utcnow()
-    o.status = "CANCELLED"
+    from ..services import stock as stock_svc
+    for i in db.query(SalesOrderItem).filter_by(order_id=oid).all():
+        left = dec(i.qty) - dec(i.qty_shipped)
+        if i.product_id and left > 0:
+            stock_svc.release(db, product_id=i.product_id, warehouse_id=1, qty=left)
     audit(db, actor, "order.cancel", "sales_orders", oid, detail=reason or "取消订单")
     db.commit()
     return {"message": "订单已取消"}
 
 
 @router.get("/orders/{oid}/pdf")
-def order_pi(oid: int, _=Depends(require("order", "export")), db=Depends(get_db)):
+def order_pi(oid: int, actor: Actor = Depends(require("order", "export")), db=Depends(get_db)):
     o = db.get(SalesOrder, oid)
     if not o:
         raise HTTPException(404, "订单不存在")
+    check_owner(o, actor)
     bank = db.query(BankAccount).filter_by(is_active=True).first()
     items = db.query(SalesOrderItem).filter_by(order_id=oid).order_by(SalesOrderItem.line_no).all()
     content = build_quotation_pdf(db, o, db.get(Customer, o.customer_id), items, bank, is_pi=True)

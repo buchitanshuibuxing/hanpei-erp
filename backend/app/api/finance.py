@@ -55,6 +55,12 @@ def create_payment(body: dict, actor: Actor = Depends(require("finance", "create
     if payload.get("direction", "IN") == "OUT" and float(amount) > limit:
         payload["approval_status"] = "PENDING"
     row = create_resource(db, Payment, payload, actor, module="finance")
+    # 超额外付自动生成审批单，审批中心可见可批；否则 PENDING 状态会卡死且无处处理
+    if row.approval_status == "PENDING":
+        db.add(ApprovalRequest(flow_type="PAYMENT", ref_type="payment", ref_id=row.id,
+                               ref_no=row.payment_no, amount=str(amount),
+                               requested_by=actor.name, status="PENDING",
+                               created_at=datetime.utcnow()))
     audit(db, actor, "payment.create", "payments", row.id, detail=f"登记 {row.payment_no}")
     db.commit()
     return {"id": row.id, "payment_no": row.payment_no, "approval_status": row.approval_status}
@@ -73,9 +79,19 @@ def allocate_payment(pid: int, body: AllocateIn, actor: Actor = Depends(require(
         raise HTTPException(404, "付款单不存在")
     if p.approval_status == "PENDING":
         raise HTTPException(400, "该付款单待审批，不能核销")
+    if p.direction != "IN":
+        raise HTTPException(400, "只有收款单（IN）可以核销到订单")
+    if body.target_type != "ORDER":
+        raise HTTPException(400, "核销目标类型仅支持 ORDER")
+    target = db.get(SalesOrder, body.target_id)
+    if not target:
+        raise HTTPException(404, "核销目标订单不存在")
     amt = dec(body.amount)
     if amt <= 0 or amt > _remaining(db, p) + Decimal("0.000001"):
         raise HTTPException(400, f"核销金额超过未核销余额 {_remaining(db, p)}")
+    already = received_total(db, target.id)
+    if already + amt > dec(target.total) + Decimal("0.01"):
+        raise HTTPException(400, f"核销金额超过订单应收：已核销 {already}，应收 {dec(target.total)}，本次 {amt}")
     db.add(PaymentAllocation(created_at=datetime.utcnow(), payment_id=pid,
                              target_type=body.target_type, target_id=body.target_id, amount=amt))
     db.flush()
@@ -225,7 +241,11 @@ def add_expense(body: dict, actor: Actor = Depends(require("finance", "create"))
 
 @router.get("/order-profits")
 def order_profits(request: Request, actor: Actor = Depends(require("finance", "view")), db=Depends(get_db)):
-    return list_resource(db, OrderProfit, actor, "finance", request)
+    data = list_resource(db, OrderProfit, actor, "finance", request)
+    for r in data["items"]:
+        o = db.get(SalesOrder, r.get("order_id"))
+        r["order_no"] = o.order_no if o else ""
+    return data
 
 
 @router.post("/order-profits/recalculate")
@@ -343,19 +363,29 @@ def reconciliation(kind: str = "CUSTOMER", _=Depends(require("finance", "view"))
 
 @router.get("/finance/export")
 def finance_export(kind: str = "profits", actor: Actor = Depends(require("finance", "export")), db=Depends(get_db)):
+    # 业务员只能导出自己归属订单的财务数据，避免导出接口绕过列表的数据隔离
+    own_only = actor.role == "SALES"
+    own_orders = ({o.id for o in db.query(SalesOrder).filter_by(owner_name=actor.name).all()}
+                  if own_only else set())
     if kind == "commissions":
         headers, rows = ["业务员", "订单", "月份", "基数", "比例", "提成", "状态"], []
         for c in db.query(Commission).all():
+            if own_only and c.user_name != actor.name and c.order_id not in own_orders:
+                continue
             rows.append([c.user_name, c.order_id, c.period, num(c.base_amount), num(c.rate),
                          num(c.amount), c.status])
     elif kind == "rebates":
         headers, rows = ["订单号", "报关单号", "发票号", "退税金额", "状态", "到账日"], []
         for r in db.query(Rebate).all():
+            if own_only and r.order_id not in own_orders:
+                continue
             rows.append([r.order_no, r.customs_doc_no, r.invoice_no, num(r.rebate_amount),
                          r.status, str(r.received_at or "")])
     else:
         headers, rows = ["订单ID", "收入", "采购成本", "运费", "佣金", "费用", "退税", "汇差", "净利", "毛利率%"], []
         for p in db.query(OrderProfit).all():
+            if own_only and p.order_id not in own_orders:
+                continue
             rows.append([p.order_id, num(p.revenue), num(p.purchase_cost), num(p.freight_share),
                          num(p.commission_fee), num(p.expenses), num(p.rebate),
                          num(p.exchange_gain), num(p.net_profit), num(p.margin_pct)])

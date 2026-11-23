@@ -9,7 +9,7 @@
         <el-input v-if="cfg.search" v-model="keyword" placeholder="搜索关键字" clearable
           style="width: 210px" @keyup.enter="load(1)" />
         <el-button @click="load(1)">查询</el-button>
-        <el-button v-if="cfg.form && auth.can(cfg.module, 'create')" type="primary" @click="openForm()">新增</el-button>
+        <el-button v-if="cfg.form && CREATABLE.has(key) && auth.can(cfg.module, 'create')" type="primary" @click="openForm()">新增</el-button>
         <el-button v-if="cfg.createRoute" type="primary" @click="router.push(cfg.createRoute)">{{ cfg.createText || '新建' }}</el-button>
         <el-button v-if="cfg.templateUrl" @click="dl(cfg.templateUrl, cfg.title + '导入模板')">导入模板</el-button>
         <el-button v-if="cfg.importUrl" @click="pickFile">Excel 导入</el-button>
@@ -21,9 +21,10 @@
 
     <div class="card">
       <div class="table-scroll">
-        <el-table :data="rows" size="small" border stripe height="420" @row-dblclick="onDblClick">
+        <el-table :data="rows" size="small" border stripe height="420" style="width: 100%" @row-dblclick="onDblClick">
           <el-table-column v-for="col in cfg.columns" :key="col.prop" :prop="col.prop"
-            :label="col.label" :width="col.width" show-overflow-tooltip>
+            :label="col.label" :width="col.width <= 100 ? col.width : undefined"
+            :min-width="col.width > 100 ? col.width : undefined" show-overflow-tooltip>
             <template #default="{ row }">
               <el-tag v-if="col.type === 'tag'" size="small"
                 :type="tagType(row[col.prop])">{{ row[col.prop] ?? '-' }}</el-tag>
@@ -33,14 +34,14 @@
           </el-table-column>
           <el-table-column label="操作" fixed="right" :width="actionWidth">
             <template #default="{ row }">
-              <el-button v-if="cfg.form && auth.can(cfg.module, 'edit')" link type="primary"
+              <el-button v-if="cfg.form && EDITABLE.has(key) && auth.can(cfg.module, 'edit')" link type="primary"
                 size="small" @click="openForm(row)">编辑</el-button>
               <el-button v-if="cfg.rowRoute" link type="primary" size="small"
                 @click="router.push(cfg.rowRoute + '/' + row.id)">详情</el-button>
               <el-button v-for="a in (EXTRA[key] || [])" :key="a.label" link size="small"
                 :type="a.danger ? 'danger' : 'primary'" @click="runExtra(a, row)">{{ a.label }}</el-button>
-              <el-button v-if="cfg.form && auth.can(cfg.module, 'delete')" link type="danger"
-                size="small" @click="remove(row)">删除</el-button>
+              <el-button v-if="DELETABLE.has(key) && auth.can(cfg.module, 'delete')" link type="danger"
+                size="small" @click="remove(row)">{{ key === 'orders' ? '取消订单' : '删除' }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -88,7 +89,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { RESOURCES } from '../menu'
+import { RESOURCES, CREATABLE, EDITABLE, DELETABLE } from '../menu'
 import { get, post, put, del, download as dl } from '../api'
 import http from '../api'
 import { useAuth } from '../stores/auth'
@@ -228,11 +229,14 @@ async function saveForm() {
   } catch { /* 拦截器已提示 */ }
 }
 async function remove(row) {
+  const isOrder = key.value === 'orders'
   try {
-    await ElMessageBox.confirm(`确认删除 ${cfg.value.title} #${row.id}？此操作不可撤销。`, '删除确认',
-      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+    await ElMessageBox.confirm(
+      isOrder ? `确认取消订单 #${row.id}？将释放库存占用且不可撤销。` : `确认删除 ${cfg.value.title} #${row.id}？此操作不可撤销。`,
+      isOrder ? '取消订单确认' : '删除确认',
+      { type: 'warning', confirmButtonText: isOrder ? '确认取消' : '确认删除', cancelButtonText: '取消' })
     await del(`${cfg.value.endpoint}/${row.id}`)
-    ElMessage.success('已删除')
+    ElMessage.success(isOrder ? '订单已取消' : '已删除')
     load(page.value)
   } catch { /* 取消或错误 */ }
 }

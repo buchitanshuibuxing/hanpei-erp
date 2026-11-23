@@ -12,11 +12,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .core.deps import require
 from .db import ROOT, SessionLocal, init_db
 from .models.system import IdempotencyKey, User
 
@@ -125,7 +126,7 @@ for module in (auth, common, crm, extended, finance, orders, products,
 
 
 @app.post("/api/system/reminders/run")
-def run_reminders():
+def run_reminders(_=Depends(require("system", "edit"))):
     from .services.reminders import check_reminders
     return {"created": check_reminders(manual=True)}
 

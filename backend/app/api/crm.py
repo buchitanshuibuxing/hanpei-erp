@@ -107,7 +107,10 @@ def transfer_customer(cid: int, body: TransferIn, actor: Actor = Depends(require
 
 @router.get("/customers/export/all")
 def export_customers(actor: Actor = Depends(require("crm", "export")), db=Depends(get_db)):
-    rows = db.query(Customer).filter(Customer.deleted_at.is_(None)).all()
+    rows = db.query(Customer).filter(Customer.deleted_at.is_(None))
+    if actor.role == "SALES":
+        rows = rows.filter(Customer.owner_name == actor.name)
+    rows = rows.all()
     headers = ["编码", "公司名", "国家", "等级", "业务员", "币种", "付款政策", "账期(天)",
                "信用额度", "WhatsApp", "邮箱", "状态"]
     data = [[c.code, c.name, c.country, c.level, c.owner_name, c.currency, c.payment_policy,

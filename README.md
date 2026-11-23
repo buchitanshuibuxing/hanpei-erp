@@ -1,8 +1,9 @@
 # Hanpei ERP — 汽车配件外贸 ERP
 
 > 按《ERP系统规划方案.md》v2.1 与《核心数据结构设计.md》v2.1 **从零建成的可运行完整项目**（2026-11-23）。
+> 2026-11-23 晚追加 **v1.0.1 闭环加固**：内容区满屏自适应 + 全链路闭环审计修复（见规划附录 E.8）。
 > 业务主线：产品库 → 快速报价 → 销售订单 → 采购库存 → 出运单证 → 财务核算。
-> 5 套端到端测试 + 全链路冒烟全绿；实现差异、业务口径、验收基线见规划方案**附录 E**，字段与表清单回写见数据结构设计**第 14 节**。
+> 6 套端到端测试 + 全链路冒烟全绿；实现差异、业务口径、验收基线见规划方案**附录 E**，字段与表清单回写见数据结构设计**第 14 节**。
 
 ## 技术栈与部署形态
 
@@ -104,11 +105,18 @@ python ../scripts/test_order_flow.py        # 订单履约闭环（17 次请求 
 python ../scripts/test_purchase_flow.py     # 采购库存闭环（11 次请求）
 python ../scripts/test_finance_flow.py      # 财务闭环（19 次请求，含幂等/门户隔离）
 python ../scripts/test_stocktake_return.py  # 盘点 / 采购退货闭环（16 次请求）
+python ../scripts/test_closure_fixes.py     # 闭环防护回归（18 次请求，v1.0.1）
 python ../scripts/smoke_api.py              # 全链路冒烟
 python -m alembic upgrade head              # 空库迁移验证（生产 PG 前必跑）
 ```
 
-测试用进程内 `TestClient`，无需起服务。实测结果：5 套全绿；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源全部 200；Alembic 空库建出 66 张业务表。
+测试用进程内 `TestClient`，无需起服务。实测结果：**6 套全绿**；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源全部 200；Alembic 空库建出 66 张业务表。
+
+## UI 布局约定
+
+- 顶栏 + 208px 左侧栏 + **右侧内容区吃掉剩余全部宽度**（`.content` 与 `.el-table` 均 100%）；
+- 列表列一律用 `min-width` 弹性列（固定操作列除外），宽屏按比例拉伸填满、窄屏自动横滚，不出现「内容靠左、右侧大片空白」；
+- 全站统一 `Pager`、`.table-scroll` 固定高度内滚、破坏性动作二次确认（附录 D）。
 
 ## 生产部署（Linux 一键）
 

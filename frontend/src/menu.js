@@ -278,6 +278,22 @@ export const RESOURCES = {
   },
 }
 
+// 后端能力白名单（与 backend/app/api 的 POST / PUT / DELETE 路由一一对应）。
+// 只对确实实现了对应方法的资源显示按钮，避免通用列表页点出 404/405 死链。
+export const CREATABLE = new Set([
+  'products', 'customers', 'suppliers', 'leads', 'follow-ups', 'quotations', 'orders',
+  'purchase-orders', 'purchase-returns', 'stocktakes', 'shipments', 'documents',
+  'payments', 'approvals', 'bank-accounts', 'forex-rates', 'rebates', 'expenses',
+  'commissions', 'claims', 'forwarders', 'watermark-templates', 'social-posts',
+  'customs-records', 'mails', 'portal-accounts', 'users',
+])
+export const EDITABLE = new Set([
+  'products', 'customers', 'suppliers', 'leads', 'quotations', 'orders',
+  'rebates', 'watermark-templates', 'users',
+])
+// orders 的 DELETE 语义是「取消订单」，前端单独改文案与确认提示
+export const DELETABLE = new Set(['products', 'customers', 'quotations', 'orders'])
+
 export const MENUS = [
   { group: '总览', items: [{ path: '/dashboard', title: '工作台' }] },
   { group: '基础数据', items: [

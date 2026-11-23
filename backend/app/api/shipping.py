@@ -19,6 +19,7 @@ from ..models.product import ProductOeNumber
 from ..models.sales import SalesOrder, SalesOrderItem
 from ..models.shipping import (Document, FreightCost, Shipment, ShipmentCarton,
                                ShipmentContainer, ShipmentItem)
+from ..services import stock as stock_svc
 from ..services.excel import read_excel
 from ..services.order_state import apply_shipment
 from ..services.pdf import build_packing_list_pdf
@@ -48,22 +49,31 @@ def create_shipment(body: dict, actor: Actor = Depends(require("shipment", "crea
     payload.setdefault("status", "BOOKING")
     s = create_resource(db, Shipment, payload, actor, module="shipment")
     for it in items:
+        qty = dec(it.get("qty") or 0)
         db.add(ShipmentItem(shipment_id=s.id, order_item_id=it.get("order_item_id"),
                             product_id=it.get("product_id"), name_snapshot=it.get("name_snapshot", ""),
-                            oe_no=it.get("oe_no", ""), qty=dec(it.get("qty") or 0),
+                            oe_no=it.get("oe_no", ""), qty=qty,
                             ctn_no=it.get("ctn_no", ""), amount=dec(it.get("amount") or 0),
                             created_by=actor.name))
         if it.get("order_item_id"):
             oi = db.get(SalesOrderItem, int(it["order_item_id"]))
             if oi:
-                qty = dec(it.get("qty") or 0)
                 if dec(oi.qty_shipped) + qty > dec(oi.qty):
                     raise HTTPException(400, f"分批出运数量超过订单数量：行 {oi.line_no} 可出运 "
                                              f"{float(dec(oi.qty) - dec(oi.qty_shipped))}，本次 {float(qty)}")
                 oi.qty_shipped = dec(oi.qty_shipped) + qty
+        # 闭环：出运扣减实物库存、同步释放下单时的占用量（两者同减，可用量保持一致）。
+        # 未备足货时允许负库存并留流水，采购到货自动回正，绝不静默丢失出运记录。
+        if it.get("product_id") and qty > 0:
+            wh = 1  # 与 quotations.convert 的 allocate 默认仓库一致
+            stock_svc.move(db, product_id=int(it["product_id"]), warehouse_id=wh, qty=qty,
+                           move_type="OUT_SALE", ref_type="SHIPMENT", ref_id=s.id,
+                           ref_no=s.shipment_no, operator=actor.name, allow_negative=True,
+                           note="出运扣减；未备足货时形成欠货，采购到货回正")
+            stock_svc.release(db, product_id=int(it["product_id"]), warehouse_id=wh, qty=qty)
     db.flush()
     left = db.query(SalesOrderItem).filter_by(order_id=order.id).all()
-    all_shipped = all(dec(i.qty_shipped) >= dec(i.qty) for i in left)
+    all_shipped = bool(left) and all(dec(i.qty_shipped) >= dec(i.qty) for i in left)
     apply_shipment(db, order, actor, s.id, all_shipped=all_shipped)
     db.commit()
     return {"id": s.id, "shipment_no": s.shipment_no, "batch_seq": s.batch_seq,

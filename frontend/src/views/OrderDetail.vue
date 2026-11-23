@@ -22,13 +22,13 @@
       <div class="page-title" style="font-size: 14px; margin-bottom: 8px">订单明细（行快照，历史不受产品改名改价影响）</div>
       <div class="table-scroll sm">
         <el-table :data="o.items || []" size="small" border height="260">
-          <el-table-column prop="line_no" label="#" width="50" />
-          <el-table-column prop="oe_no" label="OE NO." width="150" />
+          <el-table-column prop="line_no" label="#" min-width="50" />
+          <el-table-column prop="oe_no" label="OE NO." min-width="150" />
           <el-table-column prop="name_snapshot" label="PRODUCT NAME" min-width="180" />
-          <el-table-column prop="qty" label="数量" width="90" />
-          <el-table-column prop="qty_shipped" label="已出运" width="90" />
-          <el-table-column prop="unit_price" label="单价" width="110" />
-          <el-table-column prop="amount" label="金额" width="120" />
+          <el-table-column prop="qty" label="数量" min-width="90" />
+          <el-table-column prop="qty_shipped" label="已出运" min-width="90" />
+          <el-table-column prop="unit_price" label="单价" min-width="110" />
+          <el-table-column prop="amount" label="金额" min-width="120" />
         </el-table>
       </div>
     </div>
@@ -37,20 +37,20 @@
       <div class="card">
         <div class="page-title" style="font-size: 14px; margin-bottom: 8px">状态流转日志</div>
         <el-table :data="o.status_logs || []" size="small" class="table-scroll sm">
-          <el-table-column prop="created_at" label="时间" width="150" />
-          <el-table-column prop="from_status" label="原状态" width="130" />
-          <el-table-column prop="to_status" label="新状态" width="140" />
-          <el-table-column prop="trigger" label="驱动" width="90" />
+          <el-table-column prop="created_at" label="时间" min-width="150" />
+          <el-table-column prop="from_status" label="原状态" min-width="130" />
+          <el-table-column prop="to_status" label="新状态" min-width="140" />
+          <el-table-column prop="trigger" label="驱动" min-width="90" />
         </el-table>
       </div>
       <div class="card">
         <div class="page-title" style="font-size: 14px; margin-bottom: 8px">分批出运（已出 {{ (o.shipments || []).length }} 批）</div>
         <el-table :data="o.shipments || []" size="small" class="table-scroll sm">
-          <el-table-column prop="shipment_no" label="批次号" width="160" />
-          <el-table-column prop="batch_seq" label="第N批" width="80" />
-          <el-table-column prop="status" label="状态" width="120" />
-          <el-table-column prop="total_ctn" label="箱数" width="80" />
-          <el-table-column label="装箱单" width="90">
+          <el-table-column prop="shipment_no" label="批次号" min-width="160" />
+          <el-table-column prop="batch_seq" label="第N批" min-width="80" />
+          <el-table-column prop="status" label="状态" min-width="120" />
+          <el-table-column prop="total_ctn" label="箱数" min-width="80" />
+          <el-table-column label="装箱单" min-width="90">
             <template #default="{ row }"><el-button link type="primary" size="small"
               @click="dl(`/shipments/${row.id}/pl`, { filename: row.shipment_no })">PL</el-button></template>
           </el-table-column>

@@ -14,12 +14,13 @@ from ..core.utils import dec, num, paged, row_dict
 from ..db import get_db
 from ..models.crm import Supplier, SupplierPriceHistory
 from ..models.finance import Payment
+from ..models.system import ApprovalRequest
 from ..models.inventory import (StockBalance, StockBatch, StockMove, Stocktake,
                                 StocktakeItem, Warehouse)
 from ..models.product import Product
 from ..models.purchase import (PurchaseOrder, PurchaseOrderItem,
                                PurchaseReturn, PurchaseReturnItem)
-from ..models.sales import SalesOrderItem
+from ..models.sales import SalesOrder, SalesOrderItem
 from ..services import stock as stock_svc
 from ..services.excel import export_excel, read_excel
 from .helpers import xlsx_response
@@ -30,11 +31,23 @@ router = APIRouter(prefix="/api", tags=["采购与库存"])
 # ---------------- 采购建议 ----------------
 @router.get("/purchase-suggestions")
 def purchase_suggestions(actor: Actor = Depends(require("purchase", "view")), db=Depends(get_db)):
-    """需求 − 库存 − 在途 = 建议采购量。"""
+    """需求（未取消/未结案订单） − 可用库存 − 在途采购 = 建议采购量。"""
+    active = ("PENDING_DEPOSIT", "PREPARING", "PENDING_BALANCE", "READY_SHIP", "PARTIAL_SHIPPED")
     demand = {}
-    for it in db.query(SalesOrderItem).all():
+    rows = (db.query(SalesOrderItem)
+            .join(SalesOrder, SalesOrder.id == SalesOrderItem.order_id)
+            .filter(SalesOrder.status.in_(active)).all())
+    for it in rows:
         if it.product_id:
             demand[it.product_id] = demand.get(it.product_id, Decimal("0")) + dec(it.qty) - dec(it.qty_shipped)
+    # 已下单未到货的采购量，避免重复生成采购建议
+    open_po_ids = [p.id for p in db.query(PurchaseOrder).filter(
+        PurchaseOrder.status.notin_(("RECEIVED", "CANCELLED", "CLOSED"))).all()]
+    in_transit = {}
+    if open_po_ids:
+        for it in db.query(PurchaseOrderItem).filter(PurchaseOrderItem.po_id.in_(open_po_ids)).all():
+            left = max(Decimal("0"), dec(it.qty) - dec(it.qty_received))
+            in_transit[it.product_id] = in_transit.get(it.product_id, Decimal("0")) + left
     out = []
     for pid, need in demand.items():
         if need <= 0:
@@ -42,12 +55,14 @@ def purchase_suggestions(actor: Actor = Depends(require("purchase", "view")), db
         p = db.get(Product, pid)
         bal = db.query(StockBalance).filter_by(product_id=pid).first()
         on_hand = dec(bal.qty) - dec(bal.allocated_qty) if bal else Decimal("0")
-        qty = max(Decimal("0"), need - on_hand)
+        transit = in_transit.get(pid, Decimal("0"))
+        qty = max(Decimal("0"), need - on_hand - transit)
         if qty > 0:
             out.append({"product_id": pid, "code": p.code if p else "",
                         "name": (p.name_en or p.name_cn) if p else "",
                         "demand": float(need), "on_hand": float(on_hand),
-                        "suggest_qty": float(qty), "last_cost": float(dec(bal.avg_cost) if bal else 0)})
+                        "in_transit": float(transit), "suggest_qty": float(qty),
+                        "last_cost": float(dec(bal.avg_cost) if bal else 0)})
     return out
 
 
@@ -164,12 +179,18 @@ def confirm_return(rid: int, actor: Actor = Depends(require("purchase", "approve
                        move_type="OUT_RETURN", ref_type="PURCHASE_RETURN", ref_id=rid,
                        ref_no=r.return_no, operator=actor.name, note="采购退货出库")
         total += dec(it.amount)
-    # 自动生成 REFUND 付款单进入付款审批流
-    db.add(Payment(payment_no=next_no(db, "PAYMENT"), direction="OUT", method="REFUND",
-                   supplier_id=r.supplier_id, amount=total, currency="CNY",
-                   exchange_rate=1, base_amount=total, status="UNALLOCATED",
-                   approval_status="PENDING", note=f"采购退货 {r.return_no} 自动退款",
-                   created_at=datetime.utcnow(), created_by=actor.name))
+    # 自动生成 REFUND 付款单 + 对应审批单，审批中心可见可批，避免孤儿 PENDING 单据
+    pay = Payment(payment_no=next_no(db, "PAYMENT"), direction="OUT", method="REFUND",
+                  supplier_id=r.supplier_id, amount=total, currency="CNY",
+                  exchange_rate=1, base_amount=total, status="UNALLOCATED",
+                  approval_status="PENDING", note=f"采购退货 {r.return_no} 自动退款",
+                  created_at=datetime.utcnow(), created_by=actor.name)
+    db.add(pay)
+    db.flush()
+    db.add(ApprovalRequest(flow_type="PAYMENT", ref_type="payment", ref_id=pay.id,
+                           ref_no=pay.payment_no, amount=str(total),
+                           requested_by=actor.name, status="PENDING",
+                           created_at=datetime.utcnow()))
     r.status, r.confirmed_at = "CONFIRMED", datetime.utcnow()
     audit(db, actor, "purchase_return.confirm", "purchase_returns", rid,
           detail=f"出库并生成退款付款单 {float(total):.2f}")

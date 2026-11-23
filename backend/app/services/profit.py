@@ -45,11 +45,12 @@ def compute(db, order_id, actor_name="system"):
     for fc in db.query(FreightCost).filter(FreightCost.shipment_id.in_(ship_ids)).all() if ship_ids else []:
         freight += dec(fc.amount) * dec(fc.exchange_rate or 1)
 
-    expenses = sum(dec(e.amount) * dec(e.exchange_rate or 1)
-                   for e in db.query(Expense).filter_by(order_id=order.id).all())
-    expense_ship = sum(dec(e.amount) * dec(e.exchange_rate or 1)
-                       for e in db.query(Expense).filter(Expense.shipment_id.in_(ship_ids)).all()) if ship_ids else 0
-    expenses += expense_ship
+    # 订单直接费用 + 出运批次费用；同一笔费用同时挂订单与批次时按 id 去重，避免重复扣减
+    exp_rows = {e.id: e for e in db.query(Expense).filter_by(order_id=order.id).all()}
+    if ship_ids:
+        for e in db.query(Expense).filter(Expense.shipment_id.in_(ship_ids)).all():
+            exp_rows[e.id] = e
+    expenses = sum(dec(e.amount) * dec(e.exchange_rate or 1) for e in exp_rows.values())
 
     allocs = db.query(PaymentAllocation).filter_by(target_type="ORDER", target_id=order.id).all()
     allocated = Decimal("0")

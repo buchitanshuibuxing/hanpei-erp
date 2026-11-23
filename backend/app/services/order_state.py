@@ -24,7 +24,10 @@ ALLOWED = {
 def transition(db, order: SalesOrder, to_status, actor=None, trigger="MANUAL", ref_id=None, note=None):
     if to_status == order.status:
         return order
-    if to_status not in ALLOWED.get(order.status, set()):
+    # 样品免收款：允许从任意未结案状态由 PAYMENT 触发器直接结案（业务特例）
+    sample_close = (to_status == "CLOSED" and trigger == "PAYMENT"
+                    and getattr(order, "sample_free", False))
+    if to_status not in ALLOWED.get(order.status, set()) and not sample_close:
         raise HTTPException(400, f"状态不允许从 {order.status} 流转到 {to_status}")
     db.add(OrderStatusLog(created_at=datetime.utcnow(), order_id=order.id,
                           from_status=order.status, to_status=to_status, trigger=trigger,
@@ -63,6 +66,9 @@ def apply_receipt(db, order: SalesOrder, actor=None, payment_id=None):
 def apply_shipment(db, order: SalesOrder, actor=None, shipment_id=None, all_shipped=False):
     if order.status in ("CLOSED", "CANCELLED"):
         return order
+    if order.status == "PENDING_BALANCE":
+        # 状态机不允许「待尾款 → 部分出运」直跳，先推进到待出运，避免出运接口 400
+        transition(db, order, "READY_SHIP", actor, "SHIPMENT", shipment_id, "部分出运前推进")
     if all_shipped and order.status in ("READY_SHIP", "PARTIAL_SHIPPED"):
         return transition(db, order, "SHIPPED", actor, "SHIPMENT", shipment_id, "全部出运")
     if order.status in ("READY_SHIP", "PARTIAL_SHIPPED", "PENDING_BALANCE"):

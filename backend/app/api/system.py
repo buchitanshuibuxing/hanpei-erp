@@ -108,9 +108,11 @@ def notifications(request: Request, actor: Actor = Depends(current_user), db=Dep
 @router.post("/notifications/{nid}/read")
 def read_notification(nid: int, actor: Actor = Depends(current_user), db=Depends(get_db)):
     row = db.get(Notification, nid)
-    if row:
+    if row and row.user_name in (actor.name, "ALL"):
         row.is_read = True
         db.commit()
+    elif row:
+        raise HTTPException(403, "不能标记他人通知为已读")
     return {"message": "已读"}
 
 
@@ -158,7 +160,7 @@ def list_backups(_=Depends(require("system", "view"))):
 
 
 @router.get("/backups/{name}")
-def download_backup(name: str, _=Depends(require("system", "view"))):
+def download_backup(name: str, _=Depends(require("system", "edit"))):
     path = BACKUP_DIR / Path(name).name
     if not path.exists():
         raise HTTPException(404, "备份文件不存在")

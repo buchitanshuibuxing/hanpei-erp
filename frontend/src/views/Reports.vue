@@ -7,22 +7,22 @@
       <el-tab-pane label="销售趋势" name="sales"><div ref="chartEl" class="card" style="height: 340px"></div></el-tab-pane>
       <el-tab-pane label="产品分析" name="product">
         <div class="card table-scroll"><el-table :data="productRows" size="small" border height="420">
-          <el-table-column prop="code" label="编码" width="120" /><el-table-column prop="name" label="品名" min-width="180" />
-          <el-table-column prop="qty" label="销量" width="110" /><el-table-column prop="amount" label="销售额" width="140" />
-          <el-table-column prop="orders" label="订单行数" width="110" /></el-table></div>
+          <el-table-column prop="code" label="编码" min-width="120" /><el-table-column prop="name" label="品名" min-width="180" />
+          <el-table-column prop="qty" label="销量" min-width="110" /><el-table-column prop="amount" label="销售额" min-width="140" />
+          <el-table-column prop="orders" label="订单行数" min-width="110" /></el-table></div>
       </el-tab-pane>
       <el-tab-pane label="渠道分析" name="channel">
         <div class="card table-scroll"><el-table :data="channelRows" size="small" border height="420">
-          <el-table-column prop="channel" label="渠道" width="150" /><el-table-column prop="leads" label="线索" width="100" />
-          <el-table-column prop="customers" label="客户" width="100" /><el-table-column prop="orders" label="订单" width="100" />
-          <el-table-column prop="amount" label="销售额" width="140" /></el-table></div>
+          <el-table-column prop="channel" label="渠道" min-width="150" /><el-table-column prop="leads" label="线索" min-width="100" />
+          <el-table-column prop="customers" label="客户" min-width="100" /><el-table-column prop="orders" label="订单" min-width="100" />
+          <el-table-column prop="amount" label="销售额" min-width="140" /></el-table></div>
       </el-tab-pane>
       <el-tab-pane label="利润明细" name="profit">
         <div class="card table-scroll"><el-table :data="profitRows" size="small" border height="420">
-          <el-table-column prop="order_no" label="订单号" width="170" /><el-table-column prop="revenue" label="收入" width="130" />
-          <el-table-column prop="purchase_cost" label="采购成本" width="130" /><el-table-column prop="freight_share" label="运费" width="110" />
-          <el-table-column prop="commission_fee" label="佣金" width="110" /><el-table-column prop="exchange_gain" label="汇差" width="110" />
-          <el-table-column prop="net_profit" label="净利" width="130" /><el-table-column prop="margin_pct" label="毛利率%" width="110" /></el-table></div>
+          <el-table-column prop="order_no" label="订单号" min-width="170" /><el-table-column prop="revenue" label="收入" min-width="130" />
+          <el-table-column prop="purchase_cost" label="采购成本" min-width="130" /><el-table-column prop="freight_share" label="运费" min-width="110" />
+          <el-table-column prop="commission_fee" label="佣金" min-width="110" /><el-table-column prop="exchange_gain" label="汇差" min-width="110" />
+          <el-table-column prop="net_profit" label="净利" min-width="130" /><el-table-column prop="margin_pct" label="毛利率%" min-width="110" /></el-table></div>
       </el-tab-pane>
       <el-tab-pane label="应收账龄" name="aging">
         <div class="kpi-grid" style="margin-bottom: 10px">
@@ -30,15 +30,15 @@
             <div class="value">{{ Number(v).toLocaleString('zh-CN', {maximumFractionDigits:2}) }}</div></div>
         </div>
         <div class="card table-scroll"><el-table :data="aging.rows || []" size="small" border height="300">
-          <el-table-column prop="order_no" label="订单号" width="170" /><el-table-column prop="customer" label="客户" min-width="180" />
-          <el-table-column prop="remain" label="未收" width="130" /><el-table-column prop="due_date" label="起算日" width="130" />
-          <el-table-column prop="days" label="账龄(天)" width="110" /><el-table-column prop="bucket" label="分档" width="110" /></el-table></div>
+          <el-table-column prop="order_no" label="订单号" min-width="170" /><el-table-column prop="customer" label="客户" min-width="180" />
+          <el-table-column prop="remain" label="未收" min-width="130" /><el-table-column prop="due_date" label="起算日" min-width="130" />
+          <el-table-column prop="days" label="账龄(天)" min-width="110" /><el-table-column prop="bucket" label="分档" min-width="110" /></el-table></div>
       </el-tab-pane>
       <el-tab-pane label="库存健康" name="inventory">
         <div class="card table-scroll"><el-table :data="invRows" size="small" border height="420">
-          <el-table-column prop="code" label="编码" width="120" /><el-table-column prop="name" label="品名" min-width="180" />
-          <el-table-column prop="qty" label="库存" width="110" /><el-table-column prop="available" label="可用" width="110" />
-          <el-table-column prop="low" label="低库存" width="100" /><el-table-column prop="idle_90d" label="90天呆滞" width="110" /></el-table></div>
+          <el-table-column prop="code" label="编码" min-width="120" /><el-table-column prop="name" label="品名" min-width="180" />
+          <el-table-column prop="qty" label="库存" min-width="110" /><el-table-column prop="available" label="可用" min-width="110" />
+          <el-table-column prop="low" label="低库存" min-width="100" /><el-table-column prop="idle_90d" label="90天呆滞" min-width="110" /></el-table></div>
       </el-tab-pane>
     </el-tabs>
   </div>
