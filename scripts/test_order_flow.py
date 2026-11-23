@@ -50,8 +50,8 @@ def main():
     # PI 与状态留痕
     assert e.get(f"/orders/{oid}/pdf").startswith(b"%PDF"), "PI PDF 失败"
     assert len(final["status_logs"]) >= 3, "状态流转日志缺失"
-    assert all(l["trigger"] in ("MANUAL", "PAYMENT", "SHIPMENT", "SYSTEM")
-               for l in final["status_logs"])
+    assert all(log["trigger"] in ("MANUAL", "PAYMENT", "SHIPMENT", "SYSTEM")
+               for log in final["status_logs"])
     report("订单履约闭环", e, "| 代收跳定金 / 收款驱动 / 分批上限 / PI 全部通过")
     e.close()
 

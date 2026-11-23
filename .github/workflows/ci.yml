@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 = 生产 Docker 镜像，3.13 = 开发机，双版本都要绿
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: 安装后端依赖（锁定版本）
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -c backend/constraints.txt
+          pip install ruff
+
+      - name: 语法编译检查
+        run: python -m compileall -q backend/app scripts
+
+      - name: Lint
+        run: ruff check backend scripts
+
+      - name: 全量端到端测试 + 冒烟
+        working-directory: backend
+        run: python ../scripts/run_all.py
+
+      - name: Alembic 空库迁移验证
+        working-directory: backend
+        env:
+          DATABASE_URL: sqlite:///${{ github.workspace }}/data/ci_migrate.db
+        run: |
+          mkdir -p ../data && rm -f ../data/ci_migrate.db
+          python -m alembic upgrade head
+          python -c "
+          from sqlalchemy import inspect, text
+          from app.db import engine
+          i = inspect(engine)
+          tables = i.get_table_names()
+          biz = [t for t in tables if t != 'alembic_version']
+          assert len(biz) == 67, f'business tables={len(biz)}'
+          assert 'portal_confirmations' in tables
+          assert any(x['name'] == 'uq_sales_orders_quotation_id' and x['unique']
+                     for x in i.get_indexes('sales_orders'))
+          head = engine.connect().execute(text('select version_num from alembic_version')).scalar()
+          assert head == 'b7e2c4a91f30', head
+          print(f'migration OK: {len(biz)} business tables, head={head}')
+          "
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: 安装前端依赖（npm ci，按 lock 精确还原）
+        working-directory: frontend
+        run: npm ci --registry https://registry.npmmirror.com --no-audit --no-fund
+      - name: 构建
+        working-directory: frontend
+        run: npm run build

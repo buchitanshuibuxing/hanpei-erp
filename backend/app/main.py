@@ -5,14 +5,16 @@
 - APScheduler：每小时自动催办
 """
 import json
+import logging
 import os
 import sys
-import traceback
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +26,12 @@ from .models.system import IdempotencyKey, User
 sys.path.insert(0, str(ROOT / "backend"))
 
 _scheduler = None
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger("hanpei")
 
 
 def _ensure_indexes():
@@ -118,17 +126,39 @@ async def idempotency(request: Request, call_next):
                     headers=headers, media_type=content_type)
 
 
+@app.middleware("http")
+async def access_log(request: Request, call_next):
+    """结构化访问日志：只记录状态与耗时，不读 body（避免干扰幂等中间件）。"""
+    started = time.perf_counter()
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        logger.info("%s %s -> %s %.1fms", request.method, request.url.path,
+                    response.status_code, (time.perf_counter() - started) * 1000)
+    return response
+
+
 @app.exception_handler(HTTPException)
 async def http_error(_request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code,
                         content={"detail": str(exc.detail), "code": exc.status_code})
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    fields = ", ".join(str((err.get("loc") or ["?"])[-1]) for err in exc.errors()[:5])
+    logger.warning("validation failed %s %s fields=%s", request.method,
+                   request.url.path, fields)
+    return JSONResponse(status_code=422, content={
+        "detail": f"请求参数不合法：{fields or '字段缺失或格式错误'}", "code": 422})
+
+
 @app.exception_handler(Exception)
-async def unhandled_error(_request: Request, exc: Exception):
-    traceback.print_exc()
+async def unhandled_error(request: Request, exc: Exception):
+    # 堆栈只进服务端日志；客户端只拿通用文案，避免泄漏 SQL / 路径 / 字段等内部信息
+    logger.error("unhandled error %s %s: %s", request.method, request.url.path, exc,
+                 exc_info=(type(exc), exc, exc.__traceback__))
     return JSONResponse(status_code=500, content={
-        "detail": f"服务端处理失败：{type(exc).__name__}: {exc}", "code": 500})
+        "detail": "服务端内部错误，请联系管理员并查看服务端日志", "code": 500})
 
 
 from .api import (auth, common, crm, extended, finance, orders,  # noqa: E402
@@ -148,7 +178,7 @@ def run_reminders(_=Depends(require("system", "edit"))):
 
 @app.get("/api/system/version")
 def version():
-    return {"version": "1.0.0", "database": "sqlite" if "sqlite" in str(
+    return {"version": "1.0.3", "database": "sqlite" if "sqlite" in str(
         os.getenv("DATABASE_URL", "") or "sqlite") else "postgresql",
         "features": "MVP full-chain"}
 

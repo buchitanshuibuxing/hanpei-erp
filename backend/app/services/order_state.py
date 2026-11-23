@@ -49,7 +49,6 @@ def apply_receipt(db, order: SalesOrder, actor=None, payment_id=None):
     total = received_total(db, order.id)
     from decimal import Decimal
     total_amount = dec(order.total)
-    deposit = dec(order.deposit_amount)
     if order.sample_free and order.status not in ("CLOSED", "CANCELLED"):
         return transition(db, order, "CLOSED", actor, "PAYMENT", payment_id, "样品免收款结案")
     if total >= total_amount > 0:

@@ -92,8 +92,8 @@ def product_report(_=Depends(require("report", "view")), db=Depends(get_db)):
 @router.get("/channels")
 def channel_report(_=Depends(require("report", "view")), db=Depends(get_db)):
     agg = defaultdict(lambda: {"leads": 0, "customers": 0, "orders": 0, "amount": 0.0})
-    for l in db.query(Lead).all():
-        agg[l.channel or "UNKNOWN"]["leads"] += 1
+    for lead in db.query(Lead).all():
+        agg[lead.channel or "UNKNOWN"]["leads"] += 1
     for c in db.query(Customer).all():
         agg[c.source_channel or "UNKNOWN"]["customers"] += 1
     for o in db.query(SalesOrder).all():

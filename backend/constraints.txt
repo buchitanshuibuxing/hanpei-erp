@@ -1,0 +1,20 @@
+# 精确版本锁定（2026-11-23 实测通过 7 套端到端测试 + 30 步冒烟 + Alembic 空库迁移）
+# 用法：pip install -r requirements.txt -c constraints.txt
+# 说明：requirements.txt 保留 >= 下限便于开发环境试新版本；
+#       CI、Docker 生产镜像、正式部署一律叠加本文件，避免上游 breaking change 直接打挂服务。
+# 升级流程：先在隔离环境验证 -> 更新本文件对应版本 -> 跑 run_all.py -> 提交。
+fastapi==0.165.0
+uvicorn==0.54.0
+sqlalchemy==2.1.9
+python-multipart==0.0.34
+openpyxl==3.1.5
+reportlab==5.1.0
+apscheduler==3.11.3
+httpx==0.28.1
+cryptography==50.0.2
+pytest==9.2.0
+psycopg[binary]==3.3.9
+alembic==1.20.1
+# 关键间接依赖一并锁定，避免传递依赖漂移改变行为
+pydantic==2.14.4
+starlette==1.10.0

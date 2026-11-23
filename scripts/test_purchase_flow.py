@@ -35,13 +35,13 @@ def main():
     second = e.post(f"/purchase-orders/{po['id']}/receive", {"item_id": item_id, "qty": 60})
     assert second["status"] == "RECEIVED"
 
-    balances = e.get("/stock-balances")["items"]
-    bal = next(b for b in balances if b["product_id"] == pid and b["warehouse_id"] == 1)
+    # 显式按列过滤，不依赖默认分页（size=10；历史数据变多后目标行会被挤到第二页）
+    balances = e.get(f"/stock-balances?product_id={pid}&warehouse_id=1&size=100")["items"]
+    bal = balances[0]
     assert float(bal["qty"]) >= 100, f"库存未正确入库：{bal['qty']}"
     assert abs(float(bal["avg_cost"]) - 12.2) < 0.01, "移动加权成本不符"
 
-    moves = [m for m in e.get("/stock-moves")["items"]
-             if m["ref_type"] == "PURCHASE" and m["ref_id"] == po["id"]]
+    moves = e.get(f"/stock-moves?ref_type=PURCHASE&ref_id={po['id']}&size=100")["items"]
     assert len(moves) == 2, "到货流水应为两笔"
     assert all(m["after_qty"] == m["before_qty"] + m["qty"] for m in moves), "流水前后数量不连续"
 
@@ -52,8 +52,7 @@ def main():
                                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
                       headers=e.headers)
     assert r.status_code == 200 and r.json()["imported"] == 1, r.text
-    b2 = next(b for b in e.get("/stock-balances")["items"]
-              if b["product_id"] == 2 and b["warehouse_id"] == 1)
+    b2 = e.get("/stock-balances?product_id=2&warehouse_id=1&size=100")["items"][0]
     assert float(b2["qty"]) >= 50
 
     # Excel 导出与库存预警

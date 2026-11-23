@@ -10,8 +10,8 @@ FROM python:3.12-slim
 ARG PIP_INDEX=https://pypi.org/simple
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 SERVE_FRONTEND=1
 WORKDIR /app
-COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -i "$PIP_INDEX" -r /app/backend/requirements.txt
+COPY backend/requirements.txt backend/constraints.txt /app/backend/
+RUN pip install --no-cache-dir -i "$PIP_INDEX" -r /app/backend/requirements.txt -c /app/backend/constraints.txt
 COPY backend/ /app/backend/
 COPY --from=frontend /build/dist /app/frontend/dist
 WORKDIR /app/backend

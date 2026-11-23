@@ -852,3 +852,39 @@ python ../scripts/smoke_api.py                            # 全链路冒烟（30
 - 真实 HTTP 单端口服务 11 项全过：health / SPA 首页 / 静态资源 / 内部登录 / 产品列表 / 新增 `/api/portal-confirmations` 均 200，门户登录、门户订单含确认字段、门户确认真实写库、内部列表可读、门户令牌访问内部接口 403。
 
 **版本**：`v1.0.2`（Git tag）。至此 E.8 列出的边界无遗留；剩余事项仅为附录 E.7 的现场上线待办（PG 回归、密钥托管、真实数据 UAT/压测、外部能力联调、备份恢复演练），均需人工/现场执行，不是代码断点。
+
+---
+
+### E.10 GitHub 同类项目对标与工程稳健性加固（v1.0.3，2026-11-23）
+
+> 用户要求「在 GitHub 上找同类产品，看看项目代码够不够稳健」。检索 GitHub 后按业务相关度与工程成熟度挑样本，结论：**业务闭环不输同类，工程基建明显欠账**。本轮只补工程层，不动业务逻辑。
+
+**对标样本**（GitHub 实时检索，2026-11-23）：
+
+| 项目 | Star | 栈 | 业务相关度 | 稳健性做法 |
+|---|---:|---|---|---|
+| `odoo/odoo` | 56k | Python | 全模块 ERP | 自有 runbot CI、模块级测试框架、长期分支维护 |
+| `frappe/erpnext` | 41.5k | Python | 全模块 ERP | `pyproject.toml` 兼容版本约束 + ruff、`codecov.yml` 覆盖率、`semgrep/` 静态安全扫描、pre-commit、commitlint、语义化发布、`SECURITY.md`、`CODEOWNERS` |
+| `aureuserp/aureuserp` | 12.2k | PHP/Laravel | 进销存 + 财务 | `composer.lock` + `package-lock.json`、`phpunit.xml` 按 15 个业务域分测试套件（含 SecurityFeature）、`.env.pgtest` 专用测试库、`pint` 代码风格、`CHANGELOG.md` |
+| `idurar/idurar-erp-crm` | 8.9k | Node/React | ERP + CRM + 发票 | `engines` 精确锁定、`express-rate-limit` 限流、`joi` 入参校验、`SECURITY.md` / `CONTRIBUTING.md` |
+| `jishenghua/jshERP` | 4.7k | Java/Vue | 中文中小企业进销存 + 财务 | 无 CI、无独立测试目录 —— 国内同类工程化普遍更弱，本项目并不落后 |
+| `crbnos/carbon` | 2.9k | TS/React/Supabase | **制造业报价 + MRP + 库存，业务形态最接近本项目** | `pnpm-lock.yaml` + `Cargo.lock` 双锁、`packageManager`/`engines` 精确版本、10 个 GitHub workflow、`ci/` 含迁移 CI、`biome` lint、`typecheck`、`test`、`lint-staged` + pre-commit、`db:check:backups` 备份巡检、Swagger 生成、i18n |
+
+**已有强项（不输同类）**：67 张业务表与完整状态机、单据行快照、`payment_allocations` 核销、幂等中间件、编号/库存乐观锁、7 角色权限矩阵与成本脱敏、门户 JWT 双 scope 隔离、Fernet 密钥加密、Alembic 两段迁移、端到端测试 + 30 步冒烟、单端口部署与备份升级脚本；183 条路由中 180 条挂 `require()`，剩余 3 条为 `login` / `portal_login` / `health`，属合理公开接口。
+
+**差距与本轮补齐**：
+
+| 差距 | 同类基线 | 本轮处理 |
+|---|---|---|
+| 无 CI | carbon 10 workflow / erpnext codecov + semgrep | 新增 `.github/workflows/ci.yml`：Python 3.12/3.13 双矩阵跑编译 + lint + 8 套测试 + 冒烟 + 空库迁移断言，前端独立构建 job |
+| 后端依赖未锁版本 | 全部对标项目均有 lock 与 engines | 新增 `backend/constraints.txt`（14 个精确版本），Dockerfile 改 `-c constraints.txt`，前端 CI 改 `npm ci` |
+| **生产启动缺陷** | — | `requirements.txt` 漏声明 `alembic`，而 Dockerfile CMD 正是 `alembic upgrade head`，原镜像会直接起不来；已补齐并锁版本 |
+| 无 lint / 静态检查 | ruff / biome / pint / phpunit | 新增 `pyproject.toml` ruff `E4/E7/E9/F`，本地实跑全过并修掉 5 处真实告警（3 处未使用变量、2 处歧义变量名），CI 加 `compileall` 双保险 |
+| 测试依赖默认分页顺序 | 同类测试多用固定夹具 / 独立测试库 | `test_purchase_flow.py` 原在 `/stock-balances` 默认 `size=10` 里 `next()` 找固定产品，数据增长后第二次回归 `StopIteration`；改为按列显式过滤 + `size=100`，连续两次全量回归全绿 |
+| 测试非框架化、无覆盖率 | phpunit 分域 / codecov | 保留脚本式断言，新增 `scripts/run_all.py` 作为 CI 与人工统一入口；覆盖率列为后续演进，不伪装成已有 |
+| 无结构化日志、异常泄漏内部信息 | 同类均不回传堆栈 | `main.py` 加结构化日志与访问日志（不读 body，不破坏幂等）、中文 422；**未捕获异常原会把异常类型与消息回传客户端，改为只记服务端日志并返回通用 500** |
+| 缺安全 / 变更文档 | `SECURITY.md` / `CHANGELOG.md` 普遍具备 | 补齐两份文档，明确 CORS 通配、无通用限流、TLS 由 Nginx 终结、上传校验等已知边界 |
+
+**验证**：`run_all.py` **连续两次** 8 套测试 + 30 步冒烟全绿（证明回归不依赖累积状态）；`ruff check backend scripts` 收紧规则后 `All checks passed`，`compileall` 通过；真实 HTTP 11 项（中文 422、`version=1.0.3`、幂等键重复请求不重复建单、门户隔离 403、SPA/静态资源/登录/产品/确认列表 200）全过，捕获 12 条结构化访问日志且无启动异常；Alembic 空库 67 业务表 + 1 版本表见 E.9。
+
+**不采纳的过度工程**：多租户 SaaS、微服务拆分、工作流引擎、完整 i18n、消息队中间件 —— 单公司自用场景下不划算，维持 1.3 节「好用优先于全」的 MVP 收敛原则。

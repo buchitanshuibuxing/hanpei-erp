@@ -3,8 +3,9 @@
 > 按《ERP系统规划方案.md》v2.1 与《核心数据结构设计.md》v2.1 **从零建成的可运行完整项目**（2026-11-23）。
 > 2026-11-23 晚追加 **v1.0.1 闭环加固**：内容区满屏自适应 + 全链路闭环审计修复（见规划附录 E.8）。
 > 2026-11-23 追加 **v1.0.2 边界收口**：PL 导入数量上限、转单唯一约束、门户确认落库、子资源归属显式校验（见规划附录 E.9）。
+> 2026-11-23 追加 **v1.0.3 工程稳健性加固**：CI / 依赖锁定 / lint / 结构化日志 / 异常不泄密 / 安全文档（对标 GitHub 同类开源 ERP）。
 > 业务主线：产品库 → 快速报价 → 销售订单 → 采购库存 → 出运单证 → 财务核算。
-> 7 套端到端测试 + 全链路冒烟全绿；实现差异、业务口径、验收基线见规划方案**附录 E**，字段与表清单回写见数据结构设计**第 14 节**。
+> 8 套端到端测试 + 全链路冒烟全绿；实现差异、业务口径、验收基线见规划方案**附录 E**，字段与表清单回写见数据结构设计**第 14 节**。
 
 ## 技术栈与部署形态
 
@@ -22,7 +23,7 @@
 ```bash
 # 1) 后端依赖 + 初始化数据库（自动建表并灌入种子数据）
 cd backend
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt -c constraints.txt  # 精确版本，见「工程稳健性」
 python seed.py
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8008
 
@@ -66,6 +67,7 @@ backend/
   app/services/   库存移动加权、订单状态机、利润口径、PDF/Excel、自动催办
   app/api/        15 个路由模块（产品/CRM/报价/订单/采购库存/出运/财务/报表/系统/门户…）
   migrations/     Alembic 迁移链 d3343c60b06a（初始 66 表）→ b7e2c4a91f30（+portal_confirmations / 转单唯一索引）
+  constraints.txt 精确依赖版本锁定（CI / Docker / 正式部署必用）
   seed.py         种子数据
 frontend/
   src/menu.js     RESOURCES + MENUS 单一配置源（驱动路由/列表/表单/菜单）
@@ -73,7 +75,10 @@ frontend/
   src/views/      工作台、报价编辑、订单详情、报表、系统参数、门户、登录
   public/         PWA manifest + Service Worker
 deploy/           Dockerfile、docker-compose.yml、nginx.conf、install.sh、backup.sh、upgrade.sh
-scripts/          7 套端到端测试 + smoke_api.py 全链路冒烟 + 测试公共封装
+scripts/          8 套端到端测试 + run_all.py 一键回归 + smoke_api.py 全链路冒烟 + 测试公共封装
+.github/workflows/ Python 3.12/3.13 双矩阵 CI（lint / 测试 / 空库迁移 / 前端构建）
+pyproject.toml    ruff lint 与 pytest 配置
+SECURITY.md / CHANGELOG.md  安全边界说明与版本变更记录
 data/             运行期生成：erp.db、uploads/、backups/、master.key（已在 .gitignore）
 ```
 
@@ -108,11 +113,22 @@ python ../scripts/test_finance_flow.py      # 财务闭环（19 次请求，含�
 python ../scripts/test_stocktake_return.py  # 盘点 / 采购退货闭环（16 次请求）
 python ../scripts/test_closure_fixes.py     # 闭环防护回归（18 次请求，v1.0.1）
 python ../scripts/test_v102_boundaries.py   # v1.0.2 四项边界回归（30 次请求）
+python ../scripts/test_engineering_guards.py # 工程基建自测（依赖锁定 / CI / 422 / 500 不泄密）
 python ../scripts/smoke_api.py              # 全链路冒烟
 python -m alembic upgrade head              # 空库迁移验证（生产 PG 前必跑）
+# 或一键跑完上面全部测试：
+python ../scripts/run_all.py                # CI 与人工共用同一入口
 ```
 
-测试用进程内 `TestClient`，无需起服务。实测结果：**7 套全绿**；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源、新增的 `/api/portal-confirmations` 全部 200，门户确认真实写库且内部列表可读、门户令牌访问内部接口 403；Alembic 空库建出 **67 张业务表 + 1 张 `alembic_version` = 68 张**，head `b7e2c4a91f30`。
+测试用进程内 `TestClient`，无需起服务。实测结果：**8 套全绿**；冒烟覆盖 30 次真实 API 调用；真实 HTTP 服务上 `/api/health`、SPA 首页、登录、产品列表、静态资源、新增的 `/api/portal-confirmations` 全部 200，门户确认真实写库且内部列表可读、门户令牌访问内部接口 403；v1.0.3 另验证中文 422、`version=1.0.3`、幂等键重复请求不重复建单，并捕获 12 条结构化访问日志、无启动异常；Alembic 空库建出 **67 张业务表 + 1 张 `alembic_version` = 68 张**，head `b7e2c4a91f30`。
+
+## 工程稳健性（v1.0.3，对标同类开源 ERP）
+
+- **CI**：`.github/workflows/ci.yml`，Python 3.12（生产镜像）/ 3.13（开发机）双矩阵；跑语法编译 + `ruff check`（`E4/E7/E9/F`）+ `run_all.py`（8 套测试 + 冒烟）+ Alembic 空库迁移（断言 67 业务表与 head）；前端独立 job 用 `npm ci` 按 lock 还原后构建。连续两次全量回归全绿。
+- **依赖锁定**：`backend/requirements.txt` 保留 `>=` 下限，`backend/constraints.txt` 锁定 14 个精确版本；Dockerfile 用 `pip install -r requirements.txt -c constraints.txt`。升级流程写在 constraints 文件头。
+- **异常与日志**：`app/main.py` 结构化日志 + 访问日志（只记状态/耗时，不读 body，不干扰幂等中间件）；参数校验返回中文 422；未捕获异常堆栈只进服务端日志，客户端只收通用 500 文案。
+- **安全**：`SECURITY.md` 列出认证隔离、密钥治理与已知边界（CORS 通配、无通用限流、TLS 由 Nginx 终结、上传校验等）；登录已有 5 次失败锁定 15 分钟。
+- `CHANGELOG.md` 记录 v1.0.0 → v1.0.3 全部变更。完整对标与差距清单见规划**附录 E.10**。
 
 ## UI 布局约定
 
@@ -133,11 +149,11 @@ cd deploy && sudo bash install.sh
 
 ## 上线前待办
 
-> 已完成：Git 仓库初始化（分支 `main`）+ `v1.0.0` / `v1.0.1` / `v1.0.2` tag。以下为仍需人工/现场执行的事项。
+> 已完成：Git 仓库初始化（分支 `main`）+ `v1.0.0` / `v1.0.1` / `v1.0.2` / `v1.0.3` tag。以下为仍需人工/现场执行的事项。
 
 1. 修改 `admin` 初始密码，`SECRET_KEY` / `MASTER_KEY` 纳入密钥管理；
 2. 用真实产品/客户/期初库存 Excel 走一遍数据整理，核对 OE 准确率与报价匹配率；
-3. 在 PostgreSQL 环境跑 `alembic upgrade head` + 7 套测试（当前实测在 SQLite）；
+3. 在 PostgreSQL 环境跑 `alembic upgrade head` + 8 套测试（当前实测在 SQLite）；
 4. 逐项确认是否启用外部能力并完成素材库/邮件/飞书联调；
 5. 补 UAT 用例与性能压测（产品搜索 < 1s、万行询价导入 < 30s、20 并发流畅）；
 6. 做一次备份恢复演练，明确「系统为主、Excel 并行核对」的切换与回退条件。
@@ -151,4 +167,6 @@ cd deploy && sudo bash install.sh
 | `ERP系统规划方案.md` v2.1 | 14 模块功能规划、状态机、UI 规范、附录 E 实现差异与验收基线（E.8 闭环审计 / E.9 边界收口） |
 | `核心数据结构设计.md` v2.1 | 数据字典、ER 图、权限模型，第 14 节为代码回写校准 |
 | `素材库API开发指南（交底版）.md` | 素材库对接规范（`oe_norm` / `match-batch` / HMAC Webhook / 验收清单），ERP 侧开关待联调 |
+| `SECURITY.md` | 认证隔离、密钥治理、已知安全边界与上线前确认项 |
+| `CHANGELOG.md` | v1.0.0 → v1.0.3 变更记录 |
 | `README.md` | 本文件：安装、运行、测试、部署、验收 |

@@ -245,8 +245,8 @@ def batch_leads(body: dict, actor: Actor = Depends(require("lead", "create")), d
     items = body.get("items", [])
     created = 0
     for it in items:
-        row = create_resource(db, Lead, it, actor,
-                              defaults={"owner_name": actor.name, "owner_user_id": actor.id})
+        create_resource(db, Lead, it, actor,
+                        defaults={"owner_name": actor.name, "owner_user_id": actor.id})
         created += 1
     db.commit()
     return {"created": created}

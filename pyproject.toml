@@ -1,0 +1,36 @@
+# Hanpei ERP —— 工程工具配置（lint / 格式化 / 测试发现）
+# 业务依赖见 backend/requirements.txt 与 backend/constraints.txt
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    "backend/migrations/versions",
+    "frontend",
+    "node_modules",
+    "data",
+    "output",
+    "prototype",
+    "nginx",
+]
+
+[tool.ruff.lint]
+# 拦语法错误、未定义名、未使用变量、歧义变量名、重复定义等真实缺陷；
+# 忽略与本项目刻意为之的写法冲突的规则，后续按模块逐步收紧到 B/UP。
+select = ["E4", "E7", "E9", "F"]
+ignore = [
+    "F401",  # 模型注册等处存在刻意的「导入即副作用」
+    "F403",
+    "F405",
+    "E402",  # 部分模块为避免循环导入，import 位置靠后
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+# 现有测试是「脚本式 assert + main()」，由 scripts/run_all.py 统一驱动；
+# 这里仅固定 pytest 的发现路径，便于后续逐步迁移到真正的 pytest 用例。
+testpaths = ["scripts"]
+python_files = ["test_*.py"]

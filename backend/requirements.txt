@@ -1,3 +1,5 @@
+# 开发环境用 >= 下限；CI / Docker / 正式部署一律叠加 constraints.txt 锁定精确版本：
+#   pip install -r requirements.txt -c constraints.txt
 fastapi>=0.110
 uvicorn>=0.29
 sqlalchemy>=2.0
@@ -9,3 +11,4 @@ httpx>=0.27
 cryptography>=42
 pytest>=8.0
 psycopg[binary]>=3.1
+alembic>=1.13          # 容器启动前执行 alembic upgrade head，必须显式声明

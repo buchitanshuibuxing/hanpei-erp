@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -48,7 +48,6 @@ def money(v, currency=""):
 
 def _styles():
     f = _font()
-    ss = getSampleStyleSheet()
     return {
         "title": ParagraphStyle("t", fontName=f, fontSize=17, textColor=BLUE,
                                 alignment=2, spaceAfter=2, leading=20),
