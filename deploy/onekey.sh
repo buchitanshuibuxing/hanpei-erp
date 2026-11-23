@@ -105,39 +105,51 @@ ok "基础依赖就绪（python3=$(python3 --version 2>&1 | awk '{print $2}')）
 log "2/8 获取代码 → $INSTALL_DIR"
 # -----------------------------------------------------------------------------
 SOURCE_MODE="git"
+OWNER_REPO="${REPO_URL#https://github.com/}"; OWNER_REPO="${OWNER_REPO%.git}"
+TARBALL="https://codeload.github.com/${OWNER_REPO}/tar.gz/refs/heads/${BRANCH}"
+GIT_OPTS=(-c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 -c http.lowSpeedTime=60)
+
+# GitHub 网页/codeload 常比 git 协议稳定；clone 或 fetch 失败时一律用 tarball 覆盖源码，
+# 绝不静默沿用旧代码（否则会部署到过期版本，实测中因此重复拉过旧 minio:latest）。
+# cp -a 只覆盖 tarball 里的文件，不会删除 .env / data / .venv / dist 等运行期内容。
+fetch_tarball() {
+  warn "改用 codeload tarball 覆盖源码：$TARBALL"
+  local tmp
+  tmp="$(mktemp -d)"
+  curl -fsSL --retry 3 --max-time 120 "$TARBALL" -o "$tmp/src.tar.gz" \
+    || die "tarball 下载失败，请检查网络或设置 REPO_URL"
+  mkdir -p "$INSTALL_DIR"
+  tar -xzf "$tmp/src.tar.gz" -C "$tmp"
+  cp -a "$tmp"/"$(basename "$OWNER_REPO")-$BRANCH"/. "$INSTALL_DIR"/
+  rm -rf "$tmp"
+  SOURCE_MODE="tarball"
+}
+
 if [[ -d "$INSTALL_DIR/.git" ]]; then
-  git -C "$INSTALL_DIR" fetch --depth 1 origin "$BRANCH" >/dev/null 2>&1 \
-    && git -C "$INSTALL_DIR" checkout -q -f "$BRANCH" \
-    && git -C "$INSTALL_DIR" reset -q --hard FETCH_HEAD \
-    || warn "已有仓库更新失败，继续使用现有代码"
+  updated=0
+  for attempt in 1 2; do
+    if git -C "$INSTALL_DIR" "${GIT_OPTS[@]}" fetch --depth 1 origin "$BRANCH" >/dev/null 2>&1 \
+       && git -C "$INSTALL_DIR" checkout -q -f "$BRANCH" \
+       && git -C "$INSTALL_DIR" reset -q --hard FETCH_HEAD; then
+      updated=1; break
+    fi
+    warn "仓库更新第 $attempt 次失败（HTTP2 / TLS 常见），重试中"
+  done
+  [[ "$updated" -eq 1 ]] || fetch_tarball
 else
   cloned=0
   for attempt in 1 2; do
     rm -rf "$INSTALL_DIR"
-    if git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=0 -c http.lowSpeedTime=60 \
-         clone --depth 1 -b "$BRANCH" "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1; then
+    if git "${GIT_OPTS[@]}" clone --depth 1 -b "$BRANCH" "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1; then
       cloned=1; break
     fi
     warn "git clone 第 $attempt 次失败（国内链路 TLS 常见），重试中"
   done
-  if [[ "$cloned" -ne 1 ]]; then
-    # GitHub 网页/codeload 可达但 git 协议被干扰时，走 tarball
-    OWNER_REPO="${REPO_URL#https://github.com/}"; OWNER_REPO="${OWNER_REPO%.git}"
-    TARBALL="https://codeload.github.com/${OWNER_REPO}/tar.gz/refs/heads/${BRANCH}"
-    warn "git clone 不通，改用 codeload tarball：$TARBALL"
-    tmp="$(mktemp -d)"
-    curl -fsSL --retry 3 --max-time 120 "$TARBALL" -o "$tmp/src.tar.gz" \
-      || die "tarball 下载失败，请检查网络或设置 REPO_URL"
-    mkdir -p "$INSTALL_DIR"
-    tar -xzf "$tmp/src.tar.gz" -C "$tmp"
-    cp -a "$tmp"/"$(basename "$OWNER_REPO")-$BRANCH"/. "$INSTALL_DIR"/
-    rm -rf "$tmp"
-    SOURCE_MODE="tarball"
-  fi
+  [[ "$cloned" -eq 1 ]] || fetch_tarball
 fi
 [[ -f "$INSTALL_DIR/backend/app/main.py" ]] || die "代码目录不完整：$INSTALL_DIR"
 if [[ "$SOURCE_MODE" == "tarball" ]]; then
-  ok "代码就绪（来源：tarball，不含 .git，后续更新请重新执行脚本）"
+  ok "代码就绪（来源：tarball 覆盖更新，运行期数据保留）"
 else
   ok "代码就绪（来源：git）"
 fi
