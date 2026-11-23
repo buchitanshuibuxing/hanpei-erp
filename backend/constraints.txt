@@ -3,6 +3,8 @@
 # 说明：requirements.txt 保留 >= 下限便于开发环境试新版本；
 #       CI、Docker 生产镜像、正式部署一律叠加本文件，避免上游 breaking change 直接打挂服务。
 # 升级流程：先在隔离环境验证 -> 更新本文件对应版本 -> 跑 run_all.py -> 提交。
+# 注意：pip 的新 resolver 禁止 constraints 带 extras，这里一律写纯包名；
+#       psycopg[binary] 这类 extras 只在 requirements.txt 声明，本文件分别锁 psycopg 与 psycopg-binary。
 fastapi==0.165.0
 uvicorn==0.54.0
 sqlalchemy==2.1.9
@@ -13,8 +15,10 @@ apscheduler==3.11.3
 httpx==0.28.1
 cryptography==50.0.2
 pytest==9.2.0
-psycopg[binary]==3.3.9
+psycopg==3.3.9
 alembic==1.20.1
 # 关键间接依赖一并锁定，避免传递依赖漂移改变行为
 pydantic==2.14.4
+pydantic-core==2.50.5
+psycopg-binary==3.3.9
 starlette==1.10.0

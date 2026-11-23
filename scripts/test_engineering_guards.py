@@ -25,6 +25,11 @@ def main():
     missing = [p for p in pkgs if p not in locked]
     assert not missing, f"以下依赖未锁定精确版本：{missing}"
     assert "alembic" in locked, "alembic 缺失会导致 Docker 启动时 alembic upgrade head 失败"
+    # pip 新 resolver 禁止 constraints 出现 extras（psycopg[binary]==x 会让真实部署直接失败），
+    # 静态检查不够，必须挡住这种写法重新混进来。
+    bad_extras = [line.strip() for line in con.splitlines()
+                  if "==" in line and not line.lstrip().startswith("#") and "[" in line]
+    assert not bad_extras, f"constraints.txt 不得包含 extras：{bad_extras}"
     assert (ROOT / ".github" / "workflows" / "ci.yml").exists(), "缺少 CI 配置"
     assert (ROOT / "SECURITY.md").exists(), "缺少安全说明"
 
@@ -50,7 +55,7 @@ def main():
     assert "code" in body and "500" in body, body
 
     e.close()
-    report("工程基建自测", e, "| 依赖锁定 / CI / 422 中文 / 500 不泄密")
+    report("工程基建自测", e, "| 依赖锁定 / constraints extras / CI / 422 中文 / 500 不泄密")
 
 
 if __name__ == "__main__":

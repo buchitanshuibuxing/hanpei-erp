@@ -31,7 +31,22 @@ SKIP_FRONTEND="${SKIP_FRONTEND:-0}"
 SERVICE="hanpei-erp"
 
 usage() {
-  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+  # 不依赖 $0：脚本可能通过 `curl ... | sudo bash` 以 stdin 方式执行
+  cat <<'USAGE'
+Hanpei ERP 一键部署
+
+  sudo bash onekey.sh                lite 模式（默认）：Python 3.12 + SQLite + 前端构建
+                                     + systemd，单端口 8008
+  sudo bash onekey.sh --docker       full 模式：Docker Compose
+                                     PostgreSQL / Redis / MinIO / 后端 / Nginx，端口 80
+  sudo bash onekey.sh --help         显示本帮助
+
+可覆盖的环境变量：
+  REPO_URL BRANCH INSTALL_DIR APP_PORT HTTP_PORT
+  PYTHON_VERSION NODE_VERSION CN_MIRROR SKIP_FRONTEND
+
+脚本幂等：重复执行不会覆盖 .env、数据库或数据卷。
+USAGE
   exit 0
 }
 
